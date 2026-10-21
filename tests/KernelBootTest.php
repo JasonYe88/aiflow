@@ -69,4 +69,16 @@ class KernelBootTest extends TestCase
         $this->assertSame(['deepseek'], $gateway->channels());
         $this->assertSame($gateway, $kernel->gateway()); // 惰性单例
     }
+
+    public function testBootWiresChatService(): void
+    {
+        $kernel = AIKernel::boot([
+            'storage' => ['dsn' => 'sqlite::memory:'],
+            'cache'   => ['driver' => 'array'],
+        ]);
+
+        $chat = $kernel->chat();
+        $this->assertInstanceOf(\AIFlow\Chat\ChatService::class, $chat);
+        $this->assertSame($chat, $kernel->chat()); // 惰性单例
+    }
 }

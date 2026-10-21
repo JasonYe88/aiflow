@@ -7,6 +7,7 @@ use AIFlow\Adapter\ArrayCache;
 use AIFlow\Adapter\CurlHttpClient;
 use AIFlow\Adapter\PdoStorage;
 use AIFlow\Adapter\RedisCache;
+use AIFlow\Chat\ChatService;
 use AIFlow\Contract\CacheInterface;
 use AIFlow\Contract\StorageInterface;
 use AIFlow\Gateway\ModelGateway;
@@ -39,6 +40,9 @@ final class AIKernel
 
     /** @var ModelGateway|null 惰性 */
     private $gateway;
+
+    /** @var ChatService|null 惰性 */
+    private $chat;
 
     private function __construct(Config $config)
     {
@@ -77,6 +81,15 @@ final class AIKernel
             $this->gateway = $this->makeGateway();
         }
         return $this->gateway;
+    }
+
+    /** 会话/消息服务（惰性单例） */
+    public function chat(): ChatService
+    {
+        if ($this->chat === null) {
+            $this->chat = new ChatService($this->storage);
+        }
+        return $this->chat;
     }
 
     /** 执行迁移，返回应用的迁移版本 */
