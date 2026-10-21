@@ -42,7 +42,11 @@ final class PdoStorage implements StorageInterface
             $this->pdo->commit();
             return $result;
         } catch (\Throwable $e) {
-            $this->pdo->rollBack();
+            try {
+                $this->pdo->rollBack();
+            } catch (\Throwable $ignored) {
+                // 回滚失败不掩盖原始异常
+            }
             throw $e;
         }
     }
