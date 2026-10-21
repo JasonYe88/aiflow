@@ -65,7 +65,7 @@
 - Task 6 Kernel workflow() 访问器 + examples/workflow.php 冒烟 + CI 挂载 ✅
 - MySQL 契约轮：`WorkflowEngineMysqlTest` 复用同套用例 + InnoDB 专属校验（三表）+ 共享库动态清场 ✅
 - 测试抓到并修复 1 个真 bug：retry 元数据 `_retries` 曾污染业务上下文（改为只入日志）
-- 全量：152 用例 / 1553 断言全绿（3 skip 为 live HTTP/Redis；MySQL 契约轮实库通过）
+- 全量：173 用例 / 1642 断言全绿（3 skip 为 live HTTP/Redis；MySQL 契约轮实库通过；PHP 7.3.4 真机同套全绿）
 - 待办：FMS 一条成熟财务流程以工作流挂载（原 M4 核心验收，待 FMS 侧消费）；真实模型验证待 `AIFLOW_QWEN_KEY` 场景实跑 examples/workflow.php
 
 ## M5：开源发布 ⬜ 下一步

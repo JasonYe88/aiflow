@@ -15,14 +15,14 @@
 composer require yafex/aiflow
 ```
 
-### 方式 B：VCS 仓库（已可用的私有/内网安装）
+### 方式 B：VCS 仓库（✅ 已实测：GitHub 仓库已上线）
 
-宿主项目 `composer.json` 声明仓库地址后 require：
+宿主项目 `composer.json` 声明仓库地址后 require（默认分支为 `master`，版本号写 `dev-master`）：
 
 ```json
 {
     "repositories": [
-        { "type": "vcs", "url": "https://your-git-host/yafex/aiflow.git" }
+        { "type": "vcs", "url": "https://github.com/JasonYe88/aiflow.git" }
     ],
     "require": { "yafex/aiflow": "dev-master" }
 }

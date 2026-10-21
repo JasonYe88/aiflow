@@ -22,7 +22,7 @@
 | M1 | 模型网关（OpenAI 兼容）+ ChatService + SSE 流式 + FMS 挂载 | ✅ 完成（千问真实验收通过） |
 | M2 | CreditLedger 两阶段记账 + AccessControl RBAC | ✅ aiflow 侧完成（FMS 页面消费 Task 9-10 待定——页面接入拟改插件方式） |
 | M3 | AgentRuntime + 工具注册 | ✅ 完成（function-calling 循环 + 工具权限门，132 用例绿） |
-| M4 | WorkflowEngine + 4 种内置节点 + 存储表异步队列 | ✅ 完成（同步 run / 异步 dispatch+consume / 全链路落库，152 用例绿） |
+| M4 | WorkflowEngine + 4 种内置节点 + 存储表异步队列 | ✅ 完成（同步 run / 异步 dispatch+consume / 全链路落库） |
 | M5 | 开源发布（Packagist `yafex/aiflow`） | ⬜ 待启动（下一步） |
 
 ## 快速上手
