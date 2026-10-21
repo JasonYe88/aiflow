@@ -1,0 +1,24 @@
+{
+    "name": "yafex/aiflow",
+    "description": "可嵌入 PHP 项目的 LLMOps 内核：权限、积分、对话、Agent、工作流",
+    "type": "library",
+    "license": "Apache-2.0",
+    "keywords": ["llm", "llmops", "agent", "workflow", "dify", "chatbot", "credits"],
+    "require": {
+        "php": ">=7.4",
+        "ext-pdo": "*",
+        "ext-json": "*"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^9.6"
+    },
+    "autoload": {
+        "psr-4": { "AIFlow\\": "src/" }
+    },
+    "autoload-dev": {
+        "psr-4": { "AIFlow\\Tests\\": "tests/" }
+    },
+    "scripts": {
+        "test": "phpunit --colors=always"
+    }
+}
