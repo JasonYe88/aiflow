@@ -61,6 +61,32 @@ class OpenAiCompatibleProviderTest extends TestCase
         $this->assertSame(0.5, $payload['temperature']);
     }
 
+    /** M3：options 携带 tools/tool_choice 时须原样透传（function-calling 的前提） */
+    public function testChatPassesToolsAndToolChoice(): void
+    {
+        $this->http->queue(new HttpResponse(200, json_encode([
+            'choices' => [['message' => ['content' => 'ok', 'tool_calls' => []]]],
+            'usage' => [],
+        ])));
+
+        $tools = [[
+            'type' => 'function',
+            'function' => [
+                'name' => 'get_weather',
+                'description' => '查询城市天气',
+                'parameters' => ['type' => 'object', 'properties' => ['city' => ['type' => 'string']]],
+            ],
+        ]];
+        $this->provider()->chat([['role' => 'user', 'content' => '北京天气?']], [
+            'tools' => $tools,
+            'tool_choice' => 'auto',
+        ]);
+
+        $payload = json_decode($this->http->requests[0]['body'], true);
+        $this->assertSame($tools, $payload['tools']);
+        $this->assertSame('auto', $payload['tool_choice']);
+    }
+
     public function testChatThrowsWithVendorBodyOnHttpError(): void
     {
         $this->http->queue(new HttpResponse(401, '{"error":{"message":"Authentication Fails"}}'));

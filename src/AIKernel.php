@@ -3,17 +3,23 @@ declare(strict_types=1);
 
 namespace AIFlow;
 
+use AIFlow\Access\AccessService;
+use AIFlow\Access\FixedUserProvider;
 use AIFlow\Adapter\ArrayCache;
 use AIFlow\Adapter\CurlHttpClient;
 use AIFlow\Adapter\PdoStorage;
 use AIFlow\Adapter\RedisCache;
+use AIFlow\Agent\AgentRuntime;
 use AIFlow\Chat\ChatService;
 use AIFlow\Contract\CacheInterface;
 use AIFlow\Contract\StorageInterface;
+use AIFlow\Contract\UserProviderInterface;
+use AIFlow\Credit\CreditService;
 use AIFlow\Gateway\ModelGateway;
 use AIFlow\Gateway\OpenAiCompatibleProvider;
 use AIFlow\Support\Config;
 use AIFlow\Support\Migrator;
+use AIFlow\Workflow\WorkflowEngine;
 use PDO;
 use Redis;
 
@@ -26,6 +32,7 @@ use Redis;
  *   cache:     { driver: array|redis, host?, port?, db? }
  *   migration: { dir?, auto?: bool }         dir 缺省为包内 migrations/
  *   models:    { 渠道名: { driver: openai, base_url, api_key, model }, http_timeout?: int }
+ *   access:    { user_provider?: UserProviderInterface, roles_map?: {userId: [role]}, default_roles?: [role] }（M2）
  */
 final class AIKernel
 {
@@ -43,6 +50,18 @@ final class AIKernel
 
     /** @var ChatService|null 惰性 */
     private $chat;
+
+    /** @var CreditService|null 惰性 */
+    private $credit;
+
+    /** @var AccessService|null 惰性 */
+    private $guard;
+
+    /** @var AgentRuntime|null 惰性 */
+    private $agent;
+
+    /** @var WorkflowEngine|null 惰性 */
+    private $workflow;
 
     private function __construct(Config $config)
     {
@@ -90,6 +109,42 @@ final class AIKernel
             $this->chat = new ChatService($this->storage);
         }
         return $this->chat;
+    }
+
+    /** 积分/计价/钱包/账本服务（惰性单例） */
+    public function credit(): CreditService
+    {
+        if ($this->credit === null) {
+            $this->credit = new CreditService($this->storage);
+        }
+        return $this->credit;
+    }
+
+    /** RBAC 权限判定服务（惰性单例）；配置见 access 段 */
+    public function guard(): AccessService
+    {
+        if ($this->guard === null) {
+            $this->guard = new AccessService($this->storage, $this->makeUserProvider());
+        }
+        return $this->guard;
+    }
+
+    /** Agent 运行时（惰性单例，挂模型网关）；工具注册后即可 function-calling 循环 */
+    public function agent(): AgentRuntime
+    {
+        if ($this->agent === null) {
+            $this->agent = new AgentRuntime($this->gateway());
+        }
+        return $this->agent;
+    }
+
+    /** 工作流引擎（惰性单例，挂存储 + 模型网关）：run() 同步执行 / dispatch() 异步入队 + consume() 消费 */
+    public function workflow(): WorkflowEngine
+    {
+        if ($this->workflow === null) {
+            $this->workflow = new WorkflowEngine($this->storage, $this->gateway());
+        }
+        return $this->workflow;
     }
 
     /** 执行迁移，返回应用的迁移版本 */
@@ -151,5 +206,21 @@ final class AIKernel
             ));
         }
         return $gateway;
+    }
+
+    /**
+     * access.user_provider：已实现 UserProviderInterface 的实例 → 直接用；
+     * 未配置 → FixedUserProvider（access.roles_map 精确映射 + access.default_roles 兜底，默认 ['user']）
+     */
+    private function makeUserProvider(): UserProviderInterface
+    {
+        $provider = $this->config->get('access.user_provider');
+        if ($provider instanceof UserProviderInterface) {
+            return $provider;
+        }
+        return new FixedUserProvider(
+            (array)$this->config->get('access.roles_map', []),
+            (array)$this->config->get('access.default_roles', ['user'])
+        );
     }
 }

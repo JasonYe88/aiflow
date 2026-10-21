@@ -6,7 +6,7 @@ namespace AIFlow\Exception;
 /**
  * 模型调用异常：携带厂商原始错误（状态码 + 响应体）
  */
-class ModelCallException extends \RuntimeException
+class ModelCallException extends \RuntimeException implements AIFlowException
 {
     /** @var int */
     public $statusCode;

@@ -81,4 +81,81 @@ class KernelBootTest extends TestCase
         $this->assertInstanceOf(\AIFlow\Chat\ChatService::class, $chat);
         $this->assertSame($chat, $kernel->chat()); // 惰性单例
     }
+
+    public function testBootWiresCreditService(): void
+    {
+        $kernel = AIKernel::boot([
+            'storage' => ['dsn' => 'sqlite::memory:'],
+            'cache'   => ['driver' => 'array'],
+        ]);
+
+        $credit = $kernel->credit();
+        $this->assertInstanceOf(\AIFlow\Credit\CreditService::class, $credit);
+        $this->assertSame($credit, $kernel->credit()); // 惰性单例
+    }
+
+    /** guard()：默认 FixedUserProvider（roles_map + default_roles 配置驱动） */
+    public function testBootWiresGuardWithDefaultUserProvider(): void
+    {
+        $kernel = AIKernel::boot([
+            'storage' => ['dsn' => 'sqlite::memory:'],
+            'cache'   => ['driver' => 'array'],
+            'migration' => ['auto' => true],
+            'access'  => [
+                'roles_map'     => ['vip_user' => ['vip']],
+                'default_roles' => ['user'],
+            ],
+        ]);
+
+        $guard = $kernel->guard();
+        $this->assertInstanceOf(\AIFlow\Access\AccessService::class, $guard);
+        $this->assertSame($guard, $kernel->guard()); // 惰性单例
+
+        // 授权后的资源放行、未授权拒绝（Progressive：FixedUserProvider 兜底 ['user']）
+        $guard->grant('user', 'app', 'demo');
+        $this->assertTrue($guard->check('anyone', 'app:demo'));
+        $this->assertNull($guard->guard('anyone', 'app:demo'));
+        try {
+            $guard->guard('anyone', 'workflow:demo');
+            $this->fail('应抛 PermissionDeniedException');
+        } catch (\AIFlow\Exception\PermissionDeniedException $e) {
+            $this->assertSame('workflow:demo', $e->resource);
+        }
+    }
+
+    /** guard()：宿主注入自定义 UserProviderInterface 实例（M3+ 接真实登录态的路径） */
+    public function testBootWiresGuardWithCustomUserProvider(): void
+    {
+        $provider = new class implements \AIFlow\Contract\UserProviderInterface {
+            public function rolesOf($userId): array
+            {
+                return $userId === 'boss' ? ['admin'] : [];
+            }
+        };
+
+        $kernel = AIKernel::boot([
+            'storage' => ['dsn' => 'sqlite::memory:'],
+            'cache'   => ['driver' => 'array'],
+            'migration' => ['auto' => true],
+            'access'  => ['user_provider' => $provider],
+        ]);
+
+        $guard = $kernel->guard();
+        $guard->grant('admin', 'app', 'console');
+        $this->assertTrue($guard->check('boss', 'app:console'));
+        $this->assertFalse($guard->check('someone-else', 'app:console')); // 未挂角色全拒绝
+    }
+
+    public function testBootWiresAgentRuntime(): void
+    {
+        $kernel = AIKernel::boot([
+            'storage' => ['dsn' => 'sqlite::memory:'],
+            'cache'   => ['driver' => 'array'],
+        ]);
+
+        $agent = $kernel->agent();
+        $this->assertInstanceOf(\AIFlow\Agent\AgentRuntime::class, $agent);
+        $this->assertSame($agent, $kernel->agent()); // 惰性单例
+        $this->assertSame([], $agent->toolNames());  // 裸内核：零工具，宿主按需注册
+    }
 }

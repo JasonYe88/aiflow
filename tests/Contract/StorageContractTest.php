@@ -81,4 +81,23 @@ abstract class StorageContractTest extends TestCase
         }
         $this->assertCount(0, $this->storage->query('SELECT * FROM contract_t WHERE id = ?', ['c']));
     }
+
+    /**
+     * 整型表达式与参数比较必须命中（回归用例）
+     * 背景：SQLite"整型表达式 vs TEXT 参数"跨存储类比较恒为假——列比较靠列 affinity 转
+     * 换参数侥幸可用，表达式（如 balance - frozen >= ?）无 affinity 兜底，必须是整型绑定；
+     * MySQL 靠隐式转换掩盖了该问题。M2 reserve 的冻结 UPDATE 曾因此 0 命中。
+     */
+    public function testIntegerParamBindsAsIntInExpressionCompare(): void
+    {
+        $this->storage->execute('INSERT INTO contract_t (id, num, val) VALUES (?, ?, ?)', ['n1', 5, 'low']);
+        $this->storage->execute('INSERT INTO contract_t (id, num, val) VALUES (?, ?, ?)', ['n2', 50, 'high']);
+
+        $n = $this->storage->execute('UPDATE contract_t SET val = ? WHERE num * 10 >= ?', ['hit', 100]);
+        $this->assertSame(1, $n, '整数参数在表达式比较中必须正常命中');
+
+        $rows = $this->storage->query('SELECT id FROM contract_t WHERE num * 10 = ?', [500]);
+        $this->assertCount(1, $rows);
+        $this->assertSame('n2', $rows[0]['id']);
+    }
 }

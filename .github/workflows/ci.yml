@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        php: ['7.4', '8.3']
+        php: ['7.3', '7.4', '8.3']
     services:
       redis:
         image: redis:7
@@ -45,6 +45,10 @@ jobs:
         run: composer install --no-interaction --prefer-dist
       - name: Run smoke example
         run: php examples/boot.php
+      - name: Run agent smoke example
+        run: php examples/agent.php
+      - name: Run workflow smoke example
+        run: php examples/workflow.php
       - name: Run tests
         run: composer test
         env:

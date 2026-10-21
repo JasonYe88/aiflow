@@ -40,6 +40,7 @@ class MigratorTest extends TestCase
         $applied = $migrator->migrate();
         $this->assertContains('001_init.sql', $applied);
         $this->assertContains('002_conversation_activity_seq.sql', $applied);
+        $this->assertContains('003_workflow_queue.sql', $applied);
 
         // 幂等：再跑一遍不重复执行
         $this->assertSame([], $migrator->migrate());
@@ -48,17 +49,17 @@ class MigratorTest extends TestCase
         $versions = $this->storage->query('SELECT version FROM ai_migration');
         $this->assertNotEmpty($versions);
 
-        // 10 张业务表全部存在（10 张 + 版本表）
+        // 11 张业务表全部存在（11 张 + 版本表）
         $tables = array_column(
             $this->storage->query(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'ai_%'"
             ),
             'name'
         );
-        $this->assertCount(11, $tables);
+        $this->assertCount(12, $tables);
         foreach (['ai_role', 'ai_resource', 'ai_role_resource', 'ai_wallet', 'ai_price_rule',
                   'ai_ledger_entry', 'ai_conversation', 'ai_message',
-                  'ai_workflow_run', 'ai_workflow_run_log'] as $table) {
+                  'ai_workflow_run', 'ai_workflow_run_log', 'ai_workflow_queue'] as $table) {
             $this->assertContains($table, $tables);
         }
     }
@@ -89,10 +90,11 @@ class MigratorTest extends TestCase
 
         $migrator = new Migrator($this->storage, $this->migrationsDir);
 
-        // 首跑：001 建 10 张表 + 002 加活跃序列列，全部在 MySQL 上执行成功
+        // 首跑：001 建 10 张表 + 002 加活跃序列列 + 003 工作流队列，全部在 MySQL 上执行成功
         $applied = $migrator->migrate();
         $this->assertContains('001_init.sql', $applied);
         $this->assertContains('002_conversation_activity_seq.sql', $applied);
+        $this->assertContains('003_workflow_queue.sql', $applied);
 
         // 幂等：重跑跳过已应用版本，不报 table already exists / duplicate column
         $this->assertSame([], $migrator->migrate());
@@ -100,7 +102,11 @@ class MigratorTest extends TestCase
         // 版本记录已写入
         $versions = $this->storage->query('SELECT version FROM ai_migration');
         $this->assertSame(
-            [['version' => '001_init.sql'], ['version' => '002_conversation_activity_seq.sql']],
+            [
+                ['version' => '001_init.sql'],
+                ['version' => '002_conversation_activity_seq.sql'],
+                ['version' => '003_workflow_queue.sql'],
+            ],
             $versions
         );
 
