@@ -56,7 +56,56 @@ final class OpenAiCompatibleProvider implements ModelProviderInterface
 
     public function chatStream(array $messages, array $options, callable $onDelta): ModelResult
     {
-        throw new \LogicException('流式实现见 M1 Task 4');
+        $start = microtime(true);
+        $payload = $this->payload($messages, $options, true);
+        $content = '';
+        $usage = null;
+
+        $resp = $this->http->requestStream(
+            'POST',
+            $this->endpoint(),
+            $this->headers(),
+            (string)json_encode($payload, JSON_UNESCAPED_UNICODE),
+            function (string $chunk) use (&$content, &$usage, $onDelta): void {
+                // SSE 按行解析：跨 chunk 缓冲，"data: {...}" 行有效，"[DONE]" 结束
+                static $buffer = '';
+                $buffer .= $chunk;
+                while (($pos = strpos($buffer, "\n")) !== false) {
+                    $line = trim(substr($buffer, 0, $pos));
+                    $buffer = substr($buffer, $pos + 1);
+                    if ($line === '' || strpos($line, 'data:') !== 0) {
+                        continue; // 空行（事件分隔）与心跳/注释行
+                    }
+                    $data = trim(substr($line, 5));
+                    if ($data === '[DONE]') {
+                        continue; // 结束标记
+                    }
+                    $json = json_decode($data, true);
+                    if (!is_array($json)) {
+                        continue; // 容错：坏行不炸流
+                    }
+                    $delta = (string)($json['choices'][0]['delta']['content'] ?? '');
+                    if ($delta !== '') {
+                        $content .= $delta;
+                        call_user_func($onDelta, $delta);
+                    }
+                    if (isset($json['usage']) && is_array($json['usage'])) {
+                        $usage = $json['usage']; // DeepSeek 在最后一个 chunk 带 usage
+                    }
+                }
+            }
+        );
+
+        $this->assertOk($resp);
+
+        return new ModelResult(
+            $content,
+            $this->model,
+            (int)($usage['prompt_tokens'] ?? 0),
+            (int)($usage['completion_tokens'] ?? 0),
+            (int)max(1, round((microtime(true) - $start) * 1000)),
+            ['stream' => true, 'body_length' => strlen($resp->body)]
+        );
     }
 
     /** 组装请求体 */
