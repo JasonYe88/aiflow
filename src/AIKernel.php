@@ -4,10 +4,13 @@ declare(strict_types=1);
 namespace AIFlow;
 
 use AIFlow\Adapter\ArrayCache;
+use AIFlow\Adapter\CurlHttpClient;
 use AIFlow\Adapter\PdoStorage;
 use AIFlow\Adapter\RedisCache;
 use AIFlow\Contract\CacheInterface;
 use AIFlow\Contract\StorageInterface;
+use AIFlow\Gateway\ModelGateway;
+use AIFlow\Gateway\OpenAiCompatibleProvider;
 use AIFlow\Support\Config;
 use AIFlow\Support\Migrator;
 use PDO;
@@ -21,6 +24,7 @@ use Redis;
  *   storage:   { dsn, user?, pass? }        PDO DSN，如 mysql:... 或 sqlite::memory:
  *   cache:     { driver: array|redis, host?, port?, db? }
  *   migration: { dir?, auto?: bool }         dir 缺省为包内 migrations/
+ *   models:    { 渠道名: { driver: openai, base_url, api_key, model }, http_timeout?: int }
  */
 final class AIKernel
 {
@@ -32,6 +36,9 @@ final class AIKernel
 
     /** @var CacheInterface */
     private $cache;
+
+    /** @var ModelGateway|null 惰性 */
+    private $gateway;
 
     private function __construct(Config $config)
     {
@@ -61,6 +68,15 @@ final class AIKernel
     public function cache(): CacheInterface
     {
         return $this->cache;
+    }
+
+    /** 模型网关（惰性单例） */
+    public function gateway(): ModelGateway
+    {
+        if ($this->gateway === null) {
+            $this->gateway = $this->makeGateway();
+        }
+        return $this->gateway;
     }
 
     /** 执行迁移，返回应用的迁移版本 */
@@ -103,5 +119,24 @@ final class AIKernel
             return new RedisCache($redis);
         }
         return new ArrayCache();
+    }
+
+    /** models 配置 → 渠道注册（目前支持 driver=openai，M2+ 扩展更多驱动） */
+    private function makeGateway(): ModelGateway
+    {
+        $gateway = new ModelGateway();
+        $http = new CurlHttpClient((int)$this->config->get('models.http_timeout', 120));
+        foreach ((array)$this->config->get('models', []) as $channel => $conf) {
+            if (!is_array($conf) || ($conf['driver'] ?? '') !== 'openai') {
+                continue; // 未知驱动忽略，保持前向兼容
+            }
+            $gateway->add((string)$channel, new OpenAiCompatibleProvider(
+                (string)$conf['base_url'],
+                (string)$conf['api_key'],
+                (string)($conf['model'] ?? $channel),
+                $http
+            ));
+        }
+        return $gateway;
     }
 }
