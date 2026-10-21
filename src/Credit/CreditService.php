@@ -8,11 +8,15 @@ use AIFlow\Exception\InsufficientCreditException;
 use AIFlow\Support\Id;
 
 /**
- * 积分/计价服务（M2）
- * 消费 ai_price_rule 表：模型计价规则（upsert）+ 按 token 用量计费
+ * 积分服务：Token 钱包 + 计价规则 + 不可变账本
  *
- * 钱包两阶段记账（reserve/settle/refund，ai_wallet + ai_ledger_entry）
- * 在本类上继续扩展：reserve() 预检冻结 → settle() 按实际用量结算 → 失败 refund()
+ * 两阶段记账（M2 关键设计）：
+ *   reserve 预检冻结（余额不足直接拒绝，模型调用不发生）
+ *   → 模型调用 → settle 按真实 token 实付清算 / release 失败解冻
+ *
+ * 金额单位一律为"分"（整数）；并发安全依赖条件原子 UPDATE + 影响行数判定
+ * （MySQL InnoDB 行锁 / SQLite 库级锁下语义一致，可移植不依赖 FOR UPDATE 方言）
+ * 幂等键：ref_id + kind——网络重试不会重复冻结/扣账
  */
 final class CreditService
 {
@@ -25,44 +29,36 @@ final class CreditService
     }
 
     /**
-     * 设置模型计价规则（upsert 语义：同模型覆盖，不产生第二条）
-     * 价格单位：分 / 每百万 token；multiplier 为计费倍率（折扣/加价），默认 1.0
+     * 计价规则 upsert（model 唯一键）：单价 = 分/百万 token
+     * 重复设置 = 覆盖旧规则
      */
-    public function setPriceRule(string $model, int $inputPricePerM, int $outputPricePerM, float $multiplier = 1.0): void
+    public function setPriceRule(string $model, int $inputPerM, int $outputPerM, float $multiplier = 1.0): void
     {
-        if ($model === '' || $inputPricePerM < 0 || $outputPricePerM < 0 || $multiplier < 0) {
-            throw new \InvalidArgumentException('计价规则非法：model 非空，价格与倍率须非负');
+        if ($inputPerM < 0 || $outputPerM < 0 || $multiplier < 0) {
+            throw new \InvalidArgumentException('单价与倍率不能为负数');
         }
-        $hit = $this->storage->query('SELECT id FROM ai_price_rule WHERE model = ?', [$model]);
-        if ($hit !== []) {
-            // 先查再改而非 UPDATE 看 rowCount：MySQL 对"值未变"的 UPDATE 返回 0 行，
-            // 会误判为不存在而走 INSERT 撞唯一索引
+        $this->storage->transaction(function () use ($model, $inputPerM, $outputPerM, $multiplier) {
+            // 先删后插：无 ON DUPLICATE KEY 的可移植 upsert
+            $this->storage->execute('DELETE FROM ai_price_rule WHERE model = ?', [$model]);
             $this->storage->execute(
-                'UPDATE ai_price_rule SET input_price_per_m = ?, output_price_per_m = ?, multiplier = ? WHERE model = ?',
-                [$inputPricePerM, $outputPricePerM, $multiplier, $model]
+                'INSERT INTO ai_price_rule (id, model, input_price_per_m, output_price_per_m, multiplier, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+                [Id::gen(), $model, $inputPerM, $outputPerM, $multiplier, date('Y-m-d H:i:s')]
             );
-            return;
-        }
-        $this->storage->execute(
-            'INSERT INTO ai_price_rule (id, model, input_price_per_m, output_price_per_m, multiplier, created_at)
-             VALUES (?, ?, ?, ?, ?, ?)',
-            [Id::gen(), $model, $inputPricePerM, $outputPricePerM, $multiplier, date('Y-m-d H:i:s')]
-        );
-    }
-
-    /** 模型计价规则行（model/input_price_per_m/output_price_per_m/multiplier）；未配置返回 null */
-    public function priceOf(string $model): ?array
-    {
-        $rows = $this->storage->query(
-            'SELECT model, input_price_per_m, output_price_per_m, multiplier FROM ai_price_rule WHERE model = ?',
-            [$model]
-        );
-        return $rows === [] ? null : $rows[0];
+        });
     }
 
     /**
-     * 计算一次模型调用的费用（分），四舍五入取整
-     * 未配置计价的模型返回 0：tokens 照常入流水（ai_ledger_entry），计费规则可后补追溯
+     * @return array|null {id, model, input_price_per_m, output_price_per_m, multiplier}
+     */
+    public function priceOf(string $model): ?array
+    {
+        $rows = $this->storage->query('SELECT * FROM ai_price_rule WHERE model = ?', [$model]);
+        return isset($rows[0]) ? $rows[0] : null;
+    }
+
+    /**
+     * 按规则算金额（分）：四舍五入，最低 0
+     * 未配置规则的模型返回 0（不扣费；tokens 仍入流水，计费可后补规则）
      */
     public function calcAmount(string $model, int $inputTokens, int $outputTokens): int
     {
@@ -70,46 +66,49 @@ final class CreditService
         if ($rule === null) {
             return 0;
         }
-        // 先乘后除避免精度损失；金额上限远在 BIGINT 之内
-        $raw = ($inputTokens * (int)$rule['input_price_per_m'] + $outputTokens * (int)$rule['output_price_per_m'])
-            * (float)$rule['multiplier'] / 1000000;
-        return (int)round($raw);
+        $in = $inputTokens * (int)$rule['input_price_per_m'] * (float)$rule['multiplier'] / 1000000;
+        $out = $outputTokens * (int)$rule['output_price_per_m'] * (float)$rule['multiplier'] / 1000000;
+        return (int)round($in + $out);
     }
 
-    // ---- 钱包（Task 2）----
-
     /**
-     * 建或取钱包 id（owner 唯一）；并发首建撞唯一索引时重查返回对方建的钱包
-     * owner_type ∈ user|dept|app；ownerId 为宿主体系内的主体标识
+     * 建或取钱包 id（owner_type + owner_id 唯一）
+     * 并发首建撞唯一键时捕获异常重查，保证幂等
      */
     public function ensureWallet(string $ownerType, string $ownerId): string
     {
-        $walletId = $this->findWalletId($ownerType, $ownerId);
-        if ($walletId !== null) {
-            return $walletId;
+        $rows = $this->storage->query(
+            'SELECT id FROM ai_wallet WHERE owner_type = ? AND owner_id = ?',
+            [$ownerType, $ownerId]
+        );
+        if (isset($rows[0])) {
+            return (string)$rows[0]['id'];
         }
+
         $id = Id::gen();
         $now = date('Y-m-d H:i:s');
         try {
             $this->storage->execute(
-                'INSERT INTO ai_wallet (id, owner_type, owner_id, balance, frozen, created_at, updated_at)
-                 VALUES (?, ?, ?, 0, 0, ?, ?)',
+                'INSERT INTO ai_wallet (id, owner_type, owner_id, balance, frozen, created_at, updated_at) VALUES (?, ?, ?, 0, 0, ?, ?)',
                 [$id, $ownerType, $ownerId, $now, $now]
             );
-            return $id;
-        } catch (\Throwable $ignored) {
-            // 并发首建：唯一索引拦截 → 重查对手已建的钱包；仍查不到则异常按原样上抛
-            $walletId = $this->findWalletId($ownerType, $ownerId);
-            if ($walletId === null) {
-                throw $ignored;
+        } catch (\PDOException $e) {
+            // 并发首建被唯一键拦下：重查拿先建者的 id
+            $rows = $this->storage->query(
+                'SELECT id FROM ai_wallet WHERE owner_type = ? AND owner_id = ?',
+                [$ownerType, $ownerId]
+            );
+            if (!isset($rows[0])) {
+                throw $e;
             }
-            return $walletId;
+            return (string)$rows[0]['id'];
         }
+        return $id;
     }
 
     /**
-     * 钱包信息 {id, owner_type, owner_id, balance, frozen}；未建返回 null
-     * balance/frozen 已转 int（SQLite 对 BIGINT 列返回字符串）
+     * 钱包信息（余额/冻结）
+     * @return array|null {id, owner_type, owner_id, balance, frozen}
      */
     public function walletInfo(string $ownerType, string $ownerId): ?array
     {
@@ -117,207 +116,155 @@ final class CreditService
             'SELECT id, owner_type, owner_id, balance, frozen FROM ai_wallet WHERE owner_type = ? AND owner_id = ?',
             [$ownerType, $ownerId]
         );
-        if ($rows === []) {
+        if (!isset($rows[0])) {
             return null;
         }
-        $row = $rows[0];
-        $row['balance'] = (int)$row['balance'];
-        $row['frozen'] = (int)$row['frozen'];
-        return $row;
+        // PDO 依驱动/配置可能返回字符串数字：金额字段统一转 int 出参
+        $info = $rows[0];
+        $info['balance'] = (int)$info['balance'];
+        $info['frozen'] = (int)$info['frozen'];
+        return $info;
     }
 
     /**
-     * 充值（分）：balance += amount（无钱包自动建），流水 kind=grant
-     * 方向语义：grant 的正数 = 入账（与 reserve/settle 的正数扣费相反，靠 kind 区分）
-     *
-     * @return array 充值后的钱包信息（同 walletInfo 结构）
-     * @throws \InvalidArgumentException amount <= 0
+     * 充值（分）：balance += amount，流水 kind=grant；未建钱包自动建
+     * @return array 充值后的钱包信息（含 balance/frozen）
      */
     public function grant(string $ownerType, string $ownerId, int $amountCents): array
     {
         if ($amountCents <= 0) {
-            throw new \InvalidArgumentException("充值金额必须为正数（分）：{$amountCents}");
+            throw new \InvalidArgumentException('充值金额必须为正数（单位：分）');
         }
         $walletId = $this->ensureWallet($ownerType, $ownerId);
-        // 余额变动与流水同事务：崩溃时要么都生效要么都不生效，账实一致
-        $this->storage->transaction(function () use ($walletId, $amountCents): void {
-            $this->storage->execute(
-                'UPDATE ai_wallet SET balance = balance + ?, updated_at = ? WHERE id = ?',
-                [$amountCents, date('Y-m-d H:i:s'), $walletId]
-            );
-            $this->appendEntry($walletId, '', 'grant', $amountCents, Id::gen());
-        });
-        $info = $this->walletInfo($ownerType, $ownerId);
-        // grant 内部已 ensureWallet，此处必然存在；防御性兜底
-        if ($info === null) {
-            throw new \RuntimeException("内部错误：充值后钱包不可见 owner={$ownerType}/{$ownerId}");
-        }
-        return $info;
-    }
-
-    /** @return string|null 钱包 id；未建返回 null */
-    private function findWalletId(string $ownerType, string $ownerId): ?string
-    {
-        $rows = $this->storage->query(
-            'SELECT id FROM ai_wallet WHERE owner_type = ? AND owner_id = ?',
-            [$ownerType, $ownerId]
-        );
-        return $rows === [] ? null : (string)$rows[0]['id'];
-    }
-
-    /** 追加账本流水（账本只插入、永不修改） */
-    private function appendEntry(string $walletId, string $model, string $kind, int $amount, string $refId, int $inputTokens = 0, int $outputTokens = 0): void
-    {
         $this->storage->execute(
-            'INSERT INTO ai_ledger_entry (id, wallet_id, model, input_tokens, output_tokens, amount, kind, ref_id, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [Id::gen(), $walletId, $model, $inputTokens, $outputTokens, $amount, $kind, $refId, date('Y-m-d H:i:s')]
+            'UPDATE ai_wallet SET balance = balance + ?, updated_at = ? WHERE id = ?',
+            [$amountCents, date('Y-m-d H:i:s'), $walletId]
         );
+        $this->appendEntry($walletId, '', 'grant', $amountCents, '');
+        return $this->walletInfo($ownerType, $ownerId);
     }
-
-    // ---- 预检冻结（Task 3）----
 
     /**
-     * 预检冻结：frozen += amount；可用余额（balance - frozen）不足抛 InsufficientCreditException
-     *
-     * 幂等：同 refId 已有 reserve 流水则直接成功返回（网络重试安全）；
-     * 并发安全：条件原子 UPDATE 判影响行数（MySQL 行锁 / SQLite 库级写锁天然串行化），
-     * 不用 SELECT...FOR UPDATE（MySQL 方言，SQLite 不支持）。
-     * 冻结与流水同事务：中途崩溃要么都不发生（上层可安全重试），要么都生效。
-     *
-     * @param string $walletId  钱包 id
-     * @param int    $amountCents 预留额（分）；<=0 直接返回（未计价模型估算为 0）
-     * @param string $refId 调用链幂等键（一次模型调用一个）
-     * @throws InsufficientCreditException 可用余额不足（need/have 供宿主引导充值）
-     * @throws \InvalidArgumentException 钱包不存在
+     * 预检冻结：frozen += amount，余额不足抛 InsufficientCreditException
+     * 幂等：同 refId 已有 reserve 流水则直接成功（网络重试安全）；
+     * 0/负额度为 no-op（未计价模型估算额为 0，不占冻结也不写流水）
      */
     public function reserve(string $walletId, int $amountCents, string $refId): void
     {
         if ($amountCents <= 0) {
-            return; // 0 额度无需冻结
+            return;
         }
-        if ($this->hasEntry($refId, 'reserve')) {
-            return; // 幂等：同一调用链已冻结过，重试安全
+        if ($this->findEntry($refId, 'reserve') !== null) {
+            return; // 幂等：已冻结过
         }
-        $this->storage->transaction(function () use ($walletId, $amountCents, $refId): void {
-            $affected = $this->storage->execute(
-                'UPDATE ai_wallet SET frozen = frozen + ?, updated_at = ? WHERE id = ? AND balance - frozen >= ?',
-                [$amountCents, date('Y-m-d H:i:s'), $walletId, $amountCents]
-            );
-            if ($affected > 0) {
-                $this->appendEntry($walletId, '', 'reserve', $amountCents, $refId);
-                return;
-            }
-            // 未命中：钱包不存在或可用不足 → 读现状定罪
+
+        // 条件原子 UPDATE：可用余额（balance - frozen）不足时影响行数为 0
+        $affected = $this->storage->execute(
+            'UPDATE ai_wallet SET frozen = frozen + ?, updated_at = ? WHERE id = ? AND balance - frozen >= ?',
+            [$amountCents, date('Y-m-d H:i:s'), $walletId, $amountCents]
+        );
+        if ($affected === 0) {
             $rows = $this->storage->query('SELECT balance, frozen FROM ai_wallet WHERE id = ?', [$walletId]);
-            if ($rows === []) {
-                throw new \InvalidArgumentException("钱包不存在: {$walletId}");
+            if (empty($rows)) {
+                throw new \InvalidArgumentException("钱包不存在：{$walletId}");
             }
             throw new InsufficientCreditException(
                 '余额不足',
                 $amountCents,
                 (int)$rows[0]['balance'] - (int)$rows[0]['frozen']
             );
-        });
+        }
+        $this->appendEntry($walletId, '', 'reserve', $amountCents, $refId);
     }
-
-    /** 同 refId+kind 的流水是否已存在（幂等判定） */
-    private function hasEntry(string $refId, string $kind): bool
-    {
-        return $this->findEntry($refId, $kind) !== null;
-    }
-
-    /** @return array|null 同 refId+kind 的已有流水行（Task 4 settle 幂等复用）；无则 null */
-    private function findEntry(string $refId, string $kind): ?array
-    {
-        $rows = $this->storage->query(
-            'SELECT id, wallet_id, model, input_tokens, output_tokens, amount, ref_id FROM ai_ledger_entry WHERE ref_id = ? AND kind = ?',
-            [$refId, $kind]
-        );
-        return $rows === [] ? null : $rows[0];
-    }
-
-    // ---- 清算/解冻（Task 4）----
 
     /**
-     * 清算：按计价规则算实付 → balance -= 实付、frozen -= 预留 → 流水 kind=settle（带 token 用量）
+     * 清算：按计价规则算实付 → 解冻预留、balance 扣实付 → 流水 kind=settle（带 token 用量）
      *
-     * 幂等：同 refId 已有 settle 流水直接返回原 amount（balance 为 null 表示幂等命中未重读）；
-     * 实付可大于预留（真实用量如实扣），允许扣成负数（欠费态，下次预检必然拦截，账不丢）；
-     * 解冻预留、扣实付、写流水同事务，崩溃时要么整体生效要么整体未发生（上层按 refId 重试安全）。
-     *
-     * @return array{amount:int, balance:int|null} {实付分, 清算后余额}
-     * @throws \InvalidArgumentException 钱包不存在
+     * 幂等：同 refId 已有 settle 流水直接返回原金额（balance=null 表示未重读）
+     * 实付可大于预留（真实用量如实扣，允许扣成负数欠费态——下次预检必然拦截，账不丢）
+     * @return array {amount: int 实付分, balance: int|null 清算后余额（幂等命中为 null）}
      */
     public function settle(string $walletId, string $refId, string $model, int $inputTokens, int $outputTokens, int $reservedCents): array
     {
-        $existed = $this->findEntry($refId, 'settle');
-        if ($existed !== null) {
-            return ['amount' => (int)$existed['amount'], 'balance' => null];
+        if ($existed = $this->findEntry($refId, 'settle')) {
+            return ['amount' => (int)$existed['amount'], 'balance' => null]; // 幂等命中
         }
-        $amount = $this->calcAmount($model, $inputTokens, $outputTokens);
-        $now = date('Y-m-d H:i:s');
 
-        $this->storage->transaction(function () use ($walletId, $refId, $model, $inputTokens, $outputTokens, $reservedCents, $amount, $now, &$balance): void {
-            // 解冻预留：读现值后在 PHP 侧取 min（防解冻超额），避免 MAX() 方言差异（MySQL/SQLite 3.32 双参兼容性靠不住）
-            $rows = $this->storage->query('SELECT balance, frozen FROM ai_wallet WHERE id = ?', [$walletId]);
-            if ($rows === []) {
-                throw new \InvalidArgumentException("钱包不存在: {$walletId}");
+        $amount = $this->calcAmount($model, $inputTokens, $outputTokens);
+
+        $settled = $this->storage->transaction(function () use ($walletId, $refId, $model, $inputTokens, $outputTokens, $reservedCents, $amount) {
+            $rows = $this->storage->query('SELECT id, balance, frozen FROM ai_wallet WHERE id = ?', [$walletId]);
+            if (empty($rows)) {
+                throw new \InvalidArgumentException("钱包不存在：{$walletId}");
             }
-            $unfreeze = max(0, min((int)$rows[0]['frozen'], $reservedCents));
-            if ($unfreeze > 0) {
-                $this->storage->execute(
-                    'UPDATE ai_wallet SET frozen = frozen - ?, updated_at = ? WHERE id = ?',
-                    [$unfreeze, $now, $walletId]
-                );
-            }
+            // 解冻预留：PHP 侧钳到 0（防 MAX() 方言差异），InnoDB 行锁下读改写在事务内安全
+            $unfrozen = max(0, (int)$rows[0]['frozen'] - $reservedCents);
             $this->storage->execute(
-                'UPDATE ai_wallet SET balance = balance - ?, updated_at = ? WHERE id = ?',
-                [$amount, $now, $walletId]
+                'UPDATE ai_wallet SET frozen = ?, balance = balance - ?, updated_at = ? WHERE id = ?',
+                [$unfrozen, $amount, date('Y-m-d H:i:s'), $walletId]
             );
             $this->appendEntry($walletId, $model, 'settle', $amount, $refId, $inputTokens, $outputTokens);
-            $balance = (int)$rows[0]['balance'] - $amount;
+
+            $after = $this->storage->query('SELECT balance FROM ai_wallet WHERE id = ?', [$walletId]);
+            return ['amount' => $amount, 'balance' => (int)$after[0]['balance']];
         });
 
-        return ['amount' => $amount, 'balance' => isset($balance) ? $balance : null];
+        return $settled;
     }
 
     /**
-     * 失败解冻：frozen -= amount（防御性清零），流水 kind=refund amount=0；幂等同 refId
-     * refund 流水 amount 记 0：流水只表达"调用链已终止、无扣费"，金额语义不变（正=扣费/入账看 kind）
-     *
-     * @throws \InvalidArgumentException 钱包不存在
+     * 失败解冻：frozen -= amount（钳到 0），余额不动，流水 kind=refund
+     * 幂等：同 refId 已有 refund 流水则 no-op；0 额度 no-op（本就没冻结）
      */
     public function release(string $walletId, string $refId, int $reservedCents): void
     {
-        if ($this->hasEntry($refId, 'refund')) {
-            return; // 幂等：同一调用链已解冻过
+        if ($reservedCents <= 0) {
+            return;
         }
-        $now = date('Y-m-d H:i:s');
-        $this->storage->transaction(function () use ($walletId, $refId, $reservedCents, $now): void {
-            $rows = $this->storage->query('SELECT frozen FROM ai_wallet WHERE id = ?', [$walletId]);
-            if ($rows === []) {
-                throw new \InvalidArgumentException("钱包不存在: {$walletId}");
-            }
-            $unfreeze = max(0, min((int)$rows[0]['frozen'], $reservedCents));
-            if ($unfreeze > 0) {
-                $this->storage->execute(
-                    'UPDATE ai_wallet SET frozen = frozen - ?, updated_at = ? WHERE id = ?',
-                    [$unfreeze, $now, $walletId]
-                );
-            }
-            $this->appendEntry($walletId, '', 'refund', 0, $refId);
-        });
+        if ($this->findEntry($refId, 'refund') !== null) {
+            return; // 幂等：已解冻过
+        }
+
+        $rows = $this->storage->query('SELECT frozen FROM ai_wallet WHERE id = ?', [$walletId]);
+        if (empty($rows)) {
+            throw new \InvalidArgumentException("钱包不存在：{$walletId}");
+        }
+        $unfrozen = max(0, (int)$rows[0]['frozen'] - $reservedCents);
+        $this->storage->execute(
+            'UPDATE ai_wallet SET frozen = ?, updated_at = ? WHERE id = ?',
+            [$unfrozen, date('Y-m-d H:i:s'), $walletId]
+        );
+        $this->appendEntry($walletId, '', 'refund', 0, $refId);
     }
 
-    /** 钱包流水（最近优先），含 kind/model/tokens/amount/ref_id/created_at */
+    /** 账本流水（最近优先；依赖 Id 单调递增 = 生成顺序） */
     public function entries(string $walletId, int $limit = 50): array
     {
         return $this->storage->query(
-            "SELECT kind, model, input_tokens, output_tokens, amount, ref_id, created_at
-             FROM ai_ledger_entry WHERE wallet_id = ?
-             ORDER BY created_at DESC, id DESC LIMIT " . (int)$limit,
+            'SELECT kind, model, amount, input_tokens, output_tokens, ref_id, created_at FROM ai_ledger_entry WHERE wallet_id = ? ORDER BY id DESC LIMIT ' . (int)$limit,
             [$walletId]
+        );
+    }
+
+    /**
+     * 查询指定幂等键 + 类型的流水
+     * @return array|null 命中的流水行
+     */
+    private function findEntry(string $refId, string $kind): ?array
+    {
+        $rows = $this->storage->query(
+            'SELECT * FROM ai_ledger_entry WHERE ref_id = ? AND kind = ? LIMIT 1',
+            [$refId, $kind]
+        );
+        return isset($rows[0]) ? $rows[0] : null;
+    }
+
+    /** 追加一条不可变流水（只写不改） */
+    private function appendEntry(string $walletId, string $model, string $kind, int $amount, string $refId, int $inputTokens = 0, int $outputTokens = 0): void
+    {
+        $this->storage->execute(
+            'INSERT INTO ai_ledger_entry (id, wallet_id, model, input_tokens, output_tokens, amount, kind, ref_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [Id::gen(), $walletId, $model, $inputTokens, $outputTokens, $amount, $kind, $refId, date('Y-m-d H:i:s')]
         );
     }
 }

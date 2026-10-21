@@ -85,7 +85,8 @@ mysql -u root -p 你的库 < database/schema.mysql.sql   # 11 张表终态一次
 | Agent + 工具调用 | `agent()->run(messages, tools)` | ✅ M3 |
 | 工作流（task/decision/llm/parallel） | `workflow()->run` | ✅ M4 |
 | 异步工作流（存储表队列） | `workflow()->dispatch / consume` | ✅ M4 |
-| FMS 宿主接入（计费对话/余额拦截） | CLI 已验收；页面接入拟插件化 | ✅ 后端链路 |
+| 对话演示页（余额/402/403） | `demo/ChatDemoPage::run` 或 `php -S … demo/index.php` | ✅ M2（独立入口 + fms 薄挂载） |
+| FMS 宿主接入（计费对话/余额拦截） | `ctrl/demo/jasonYe/aiChatDemo.php` 薄挂载 + CLI | ✅ M2 |
 
 ## 文档
 

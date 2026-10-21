@@ -5,9 +5,10 @@ namespace AIFlow\Exception;
 
 /**
  * 框架异常根（marker 接口）
- * 宿主 catch (AIFlowException $e) 一个类型即可捕获框架全部异常，
- * 无需逐个罗列具体异常类；具体类型按需 instanceof 精细分派
+ * 为什么用接口不用抽象类：不占用实现类的单继承槽——
+ * 各异常可自由继承 \RuntimeException / \LogicException 等 SPL 基类，
+ * 宿主捕获本接口即拿到全部框架异常
  */
-interface AIFlowException extends \Throwable
+interface AIFlowException
 {
 }

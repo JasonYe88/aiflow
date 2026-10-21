@@ -1,6 +1,6 @@
 # aiflow 任务清单（快照）
 
-> 更新于：2026-10-21 14:40
+> 更新于：2026-10-21 17:40
 > 说明：本文件是会话任务清单的定期快照；最新进度以对话为准。提交一律由仓库所有者手动执行。
 
 ## M0：内核骨架 ✅ 完成（12 commits）
@@ -23,7 +23,7 @@
 - Task 9 FMS 对话 demo 页 + SSE 端点（CLI 直调实测 + 浏览器确认）✅
 - Task 10 端到端验收：通义千问真实对话（非流式 + 流式 + 落库核对）✅
 
-## M2：积分 + 权限 🚧 进行中
+## M2：积分 + 权限 ✅ 完成
 
 计划文档：[plans/2026-10-21-aiflow-m2-implementation.md](../plans/2026-10-21-aiflow-m2-implementation.md)
 
@@ -40,8 +40,14 @@
   - aiflow：`CreditServiceMysqlTest`（+2 专属用例：全表 InnoDB 校验、跨连接 reserve 原子性）+ `BillingMysqlTest`；MySQL 轮 121 用例全绿（1403 断言）
   - fms：CLI 新增 wallet/access/price 三动作；chat/chatStream 接 guard + Billing；config 加 access 段；**php7.3.4 实跑验收通过**：
     未授权拦截 → 授权 → 充值 1 元 → 计费对话（reserve 2 分预估/settle 0 分实付、流水核对一致）→ 天价规则耗尽拦截（need=1026000/have=100，模型零调用）→ 恢复价格后流式计费对话正常
-- Task 9 FMS demo 页余额展示 + 计费拦截 ⬜
-- Task 10 端到端验收 + 收尾 ⬜
+- Task 9 demo 页入包 + 计费展示 ✅
+  - `demo/ChatDemoPage.php`：页面 + conversations/history/wallet/grant/chat，链路 guard → Billing → chatStream
+  - `demo/index.php`：`php -S` 独立入口（无 SSO，自动建库、授权、demo 计价）
+  - fms `ctrl/demo/jasonYe/aiChatDemo.php` 缩为薄挂载
+  - 实测（php7.3.4 + 千问）：done 帧 `amount=25 balance=9975` 与 wallet 回读一致；余额清零 chat 返回 402（模型零调用）；回收授权返回「无权访问」
+- Task 10 端到端验收 + 收尾 ✅
+  - 全量 173 用例 / 1642 断言绿（3 skip 为 live HTTP/Redis）
+  - 设计文档 §10、README 能力矩阵、docs/README 里程碑已标 M2 完成
 
 ## M3：Agent 平台 ✅ 完成
 

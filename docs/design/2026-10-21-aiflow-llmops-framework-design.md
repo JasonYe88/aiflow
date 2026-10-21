@@ -1,7 +1,7 @@
 # AIFlow —— 可嵌入 PHP LLMOps 内核 · 设计文档
 
 > 日期：2026-10-21
-> 状态：设计已确认（经逐节评审通过），待实施
+> 状态：设计已确认；M0–M4 内核已实施（2026-10-21）。M4 的 FMS 财务流程挂载、M5 开源发布未完成
 > 对标：Dify（https://github.com/langgenius/dify）——差异化定位见下文
 
 ---
@@ -195,14 +195,14 @@ aiflow/                        ← 开源项目
 
 按可发布切片切分，每期都能用：
 
-| 期 | 内容 | 验收标准 |
-|----|------|----------|
-| **M0** | Kernel 骨架 + Contract 接口 + MySQL/Redis 适配器 + 建表迁移 | `AIKernel::boot()` 可跑通，CI 绿 |
-| **M1** | 模型网关（OpenAI 兼容协议）+ ChatService + 流式 | FMS 里跑通一个 DeepSeek 对话页面 |
-| **M2** | CreditLedger 两阶段记账 + AccessControl RBAC | 对话自动计费、按角色限流可用 |
-| **M3** | AgentRuntime + 工具注册 | 一个 Agent 用工具完成真实查询任务 |
-| **M4** | WorkflowEngine + 4 种内置节点 + 运行追踪 | **FMS 一条成熟财务流程以工作流挂载跑通（核心验收）** |
-| **M5** | 开源发布：README/示例/文档站 + Python RAG 桥 | Packagist 发布 + 新用户 15 分钟跑通示例 |
+| 期 | 内容 | 验收标准 | 状态 |
+|----|------|----------|------|
+| **M0** | Kernel 骨架 + Contract 接口 + MySQL/Redis 适配器 + 建表迁移 | `AIKernel::boot()` 可跑通，CI 绿 | ✅ |
+| **M1** | 模型网关（OpenAI 兼容协议）+ ChatService + 流式 | FMS 里跑通一个真实模型对话页面 | ✅ 千问非流式 + 流式 + 落库 |
+| **M2** | CreditLedger 两阶段记账 + AccessControl RBAC | 对话自动计费、按角色限流可用 | ✅ 2026-10-21：Billing 预检/清算 + RBAC；独立 demo 与 fms 薄挂载实测扣费、402、403 |
+| **M3** | AgentRuntime + 工具注册 | 一个 Agent 用工具完成真实查询任务 | ✅ 引擎与单测；真实模型工具调用待宿主场景 |
+| **M4** | WorkflowEngine + 4 种内置节点 + 运行追踪 | **FMS 一条成熟财务流程以工作流挂载跑通（核心验收）** | ⚠️ 引擎完成；FMS 财务流程挂载未做 |
+| **M5** | 开源发布：README/示例/文档站 + Python RAG 桥 | Packagist 发布 + 新用户 15 分钟跑通示例 | ⬜ |
 
 ---
 

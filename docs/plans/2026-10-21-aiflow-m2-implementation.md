@@ -359,22 +359,30 @@ $out = $billing->run($walletId, 'qwen-plus', $refId, function () use ($kernel, $
 
 ---
 
-## Task 9: FMS demo 页接入（余额展示 + 计费拦截/展示 + 授权提示）
+## Task 9: demo 页入包（aiflow 自带演示页 + fms 薄挂载）+ 计费展示
 
 **Files:**
-- Modify: `ctrl/demo/jasonYe/aiChatDemo.php`
+- Create: `aiflow/demo/index.php`（内置服务器独立运行入口，`php -S localhost:8080 demo/index.php`）
+- Create: `aiflow/demo/ChatDemoPage.php`（框架无关完整演示页：UI + conversations/history/chat/wallet SSE/JSON 端点）
+- Modify: `ctrl/demo/jasonYe/aiChatDemo.php`（缩为薄挂载点，~10 行）
 
-改造点：
+**职责边界：**
 
-1. `index` 页头部显示当前钱包余额（新 JSON 端点 `wallet`），附"充值 1 元（demo）"按钮
-2. `chat` 端点完整链路：`guard → ensureWallet → Billing::run(chatStream)`；SSE 帧扩展：
-   - `meta` 帧追加 `wallet_balance=N`（发送前余额）
-   - `done` 帧追加 `amount=X`（本次实付分）与 `balance=M`（剩余）
-   - 余额不足：**头未发** → JSON 402 三段式；**已流式中途异常** → error 帧
-   - 未授权：JSON 403
-3. 前端：余额栏随 done 帧刷新；402/403 错误以气泡展示中文提示
+| 谁 | 干什么 |
+|----|--------|
+| `aiflow/demo/ChatDemoPage.php` | 页面 HTML、会话侧栏、流式渲染、余额栏 + 充值按钮、402/403 气泡——自带全部端点，`ChatDemoPage::run($kernel, $userId, $config)` 一个入口 |
+| fms 挂载点 | require 引导 + 传内核/userId/base_url，路由与 SSO 由 OF 框架照旧把守 |
+| 其他宿主 | 同样 10 行挂载即得整个页面（含 M2 计费 UI），随包分发零成本 |
 
-**验收（用户浏览器 + CLI 直调双路径）:** 正常对话一次余额减少且 done 帧带计费；把余额耗尽后发送 → 明确"积分不足"提示；回收 user 角色授权后 → "无权访问"提示。
+**计费接入点（原计划保留）：**
+
+1. 页头余额栏（wallet 端点）+ "充值 1 元（demo）"按钮
+2. `chat` 端点完整链路：`guard → ensureWallet → Billing::run(chatStream)`；SSE 帧：
+   - `meta` 帧追加 `wallet_balance=N`；`done` 帧追加 `amount=X`（实付分）与 `balance=M`（剩余）
+   - 余额不足：头未发 → JSON 402；流中异常 → error 帧；未授权 → JSON 403
+3. 独立入口（`php -S`）无 SSO，仅本地演示；对外暴露时由宿主把守登录
+
+**验收（php -S 独立入口 + fms 页面 + CLI 直调三路径）:** 正常对话余额减少、done 帧带计费；耗尽余额 → "积分不足"；回收授权 → "无权访问"；fms 控制器缩至 10 行内且页面行为与独立入口一致。
 
 ---
 
@@ -395,3 +403,12 @@ $out = $billing->run($walletId, 'qwen-plus', $refId, function () use ($kernel, $
 | 估算 token 偏差大导致频繁余额不足 | `estimateTokens` 只是缺省启发式，宿主可传精确值；预估算默认只按输入+固定输出上限（1024） |
 | 实付 > 预留扣成负余额 | 设计如此（真实用量如实扣）；负余额在下次预检必然拦截，账不丢 |
 | kind 语义扩展（grant）与旧注释不符 | 无需迁移（VARCHAR）；注释在 003 不发版不动，README 记录语义 |
+---
+
+## 验收记录（2026-10-21）
+
+- 全量测试：173 用例 / 1642 断言绿（3 skip 为 live HTTP/Redis；Credit 套件含 MySQL 契约轮与跨连接 reserve 原子性）。
+- CLI（php7.3.4 + 千问，库 `aiflow_fms`）：migrate / price / wallet grant / chat 计费链路通过（12/65 token，官方价四舍五入实付 0 分，余额回读一致）。
+- 独立入口 `php -S`（库 `demo/aiflow_demo.sqlite`，demo 倍率 1000）：充值 10000 → done 帧 `amount=25 balance=9975` → wallet 回读 9975；余额清零后 chat 返回 HTTP 402，文案含「模型未被调用」。
+- fms 薄挂载 CLI 直调：wallet 200；余额 0 时 chat 402；回收 `app:ai_chat_demo` 后返回「无权访问」，并已恢复授权。浏览器路径被 SSO 302 拦截，登录后页面交互待人工点一次。
+- 提交由仓库所有者手动执行。

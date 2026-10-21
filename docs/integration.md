@@ -158,5 +158,6 @@ $res = $kernel->gateway()->chat('qwen', [['role' => 'user', 'content' => '你好
 
 接入后的能力演进按里程碑推进，全量路线见 [design/2026-10-21-aiflow-llmops-framework-design.md](design/2026-10-21-aiflow-llmops-framework-design.md) §10：
 
+- **M2 已完成**：计价、钱包两阶段记账、RBAC；演示页在包内 `demo/ChatDemoPage.php`（`php -S localhost:8080 demo/index.php`），宿主约 10 行薄挂载
 - **M4 已完成**：引擎就绪，FMS 侧写好业务节点类（`TaskInterface`）+ `Workflow` 子类即可挂载财务流程
-- **M5**：Packagist 发布（届时方式 A 生效）+ Python RAG 桥；FMS 页面/插件化接入待定
+- **M5**：Packagist 发布（届时方式 A 生效）+ Python RAG 桥
