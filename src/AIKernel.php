@@ -86,7 +86,14 @@ final class AIKernel
 
     private function makeCache(): CacheInterface
     {
-        if ($this->config->get('cache.driver') === 'redis' && class_exists(Redis::class)) {
+        if ($this->config->get('cache.driver') === 'redis') {
+            if (!class_exists(Redis::class)) {
+                trigger_error(
+                    'aiflow: ext-redis 未安装，cache 降级为 ArrayCache（进程内不共享，Swoole 场景慎用）',
+                    E_USER_WARNING
+                );
+                return new ArrayCache();
+            }
             $redis = new Redis();
             $redis->connect(
                 (string)$this->config->get('cache.host', '127.0.0.1'),

@@ -16,7 +16,7 @@ final class ArrayCache implements CacheInterface
     /** @var int 可拨动的时钟偏移（秒），仅测试用 */
     private $clockOffset = 0;
 
-    public function get(string $key)
+    public function get(string $key): ?string
     {
         if (!isset($this->store[$key])) {
             return null;

@@ -12,7 +12,7 @@ class IdTest extends TestCase
     {
         $id = Id::gen();
         $this->assertSame(32, strlen($id));
-        $this->assertRegExp('/^[0-9a-f]{32}$/', $id);
+        $this->assertMatchesRegularExpression('/^[0-9a-f]{32}$/', $id);
     }
 
     public function testGenUnique(): void

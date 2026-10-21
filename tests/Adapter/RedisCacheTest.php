@@ -18,10 +18,14 @@ class RedisCacheTest extends TestCase
     public function testGetSetDelete(): void
     {
         $redis = new \Redis();
-        $this->assertTrue(
-            $redis->connect('127.0.0.1', 6379),
-            '本机 Redis 不可用，跳过前请确认 phpstudy Redis 已启动'
-        );
+        try {
+            $connected = $redis->connect('127.0.0.1', 6379, 1.0);
+        } catch (\RedisException $e) {
+            $this->markTestSkipped('本机 Redis 不可用（连接抛异常）：' . $e->getMessage());
+        }
+        if (!$connected) {
+            $this->markTestSkipped('本机 Redis 不可用（127.0.0.1:6379 连接失败），CI 由 Redis service container 提供实例');
+        }
         $redis->select(15); // 测试专用库，避免污染
 
         $cache = new RedisCache($redis);

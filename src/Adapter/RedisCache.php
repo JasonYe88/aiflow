@@ -19,7 +19,7 @@ final class RedisCache implements CacheInterface
         $this->redis = $redis;
     }
 
-    public function get(string $key)
+    public function get(string $key): ?string
     {
         $value = $this->redis->get($key);
         return $value === false ? null : (string)$value;
