@@ -39,6 +39,7 @@ class MigratorTest extends TestCase
 
         $applied = $migrator->migrate();
         $this->assertContains('001_init.sql', $applied);
+        $this->assertContains('002_conversation_activity_seq.sql', $applied);
 
         // 幂等：再跑一遍不重复执行
         $this->assertSame([], $migrator->migrate());
@@ -88,16 +89,20 @@ class MigratorTest extends TestCase
 
         $migrator = new Migrator($this->storage, $this->migrationsDir);
 
-        // 首跑：001_init.sql 全部 10 张表在 MySQL 上建表成功
+        // 首跑：001 建 10 张表 + 002 加活跃序列列，全部在 MySQL 上执行成功
         $applied = $migrator->migrate();
         $this->assertContains('001_init.sql', $applied);
+        $this->assertContains('002_conversation_activity_seq.sql', $applied);
 
-        // 幂等：重跑跳过已应用版本，不报 table already exists
+        // 幂等：重跑跳过已应用版本，不报 table already exists / duplicate column
         $this->assertSame([], $migrator->migrate());
 
         // 版本记录已写入
         $versions = $this->storage->query('SELECT version FROM ai_migration');
-        $this->assertSame([['version' => '001_init.sql']], $versions);
+        $this->assertSame(
+            [['version' => '001_init.sql'], ['version' => '002_conversation_activity_seq.sql']],
+            $versions
+        );
 
         // 引擎断言：宿主 MySQL 可能默认 MyISAM（无事务），迁移必须强制 InnoDB，
         // 否则钱包两阶段记账（M2）等事务语义会静默失效
