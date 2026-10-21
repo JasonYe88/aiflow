@@ -20,4 +20,32 @@ class KernelBootTest extends TestCase
         $this->assertSame('array', $kernel->config()->get('cache.driver'));
         $this->assertNull($kernel->config()->get('not_exists'));
     }
+
+    public function testBootWiresStorageAndCache(): void
+    {
+        $kernel = AIKernel::boot([
+            'storage' => ['dsn' => 'sqlite::memory:'],
+            'cache'   => ['driver' => 'array'],
+        ]);
+
+        $this->assertInstanceOf(
+            \AIFlow\Contract\StorageInterface::class,
+            $kernel->storage()
+        );
+        $this->assertInstanceOf(
+            \AIFlow\Contract\CacheInterface::class,
+            $kernel->cache()
+        );
+    }
+
+    public function testBootWiresMigrator(): void
+    {
+        $kernel = AIKernel::boot([
+            'storage'   => ['dsn' => 'sqlite::memory:'],
+            'cache'     => ['driver' => 'array'],
+            'migration' => ['dir' => dirname(__DIR__) . '/migrations', 'auto' => true],
+        ]);
+
+        $this->assertNotEmpty($kernel->storage()->query('SELECT version FROM ai_migration'));
+    }
 }
