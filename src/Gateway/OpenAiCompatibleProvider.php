@@ -116,7 +116,7 @@ final class OpenAiCompatibleProvider implements ModelProviderInterface
             'messages' => $messages,
             'stream' => $stream,
         ];
-        foreach (['temperature', 'max_tokens', 'top_p'] as $key) {
+        foreach (['temperature', 'max_tokens', 'top_p', 'stream_options'] as $key) {
             if (isset($options[$key])) {
                 $payload[$key] = $options[$key];
             }
