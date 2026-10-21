@@ -6,6 +6,7 @@
     "keywords": ["llm", "llmops", "agent", "workflow", "dify", "chatbot", "credits"],
     "require": {
         "php": ">=7.4",
+        "ext-curl": "*",
         "ext-pdo": "*",
         "ext-json": "*"
     },
