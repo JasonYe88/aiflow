@@ -10,6 +10,12 @@ namespace AIFlow\Contract;
 interface StorageInterface
 {
     /**
+     * 存储驱动名（PDO ATTR_DRIVER_NAME 值，如 mysql / sqlite）
+     * 方言分支用：Migrator 按它决定是否追加 ENGINE=InnoDB 等 MySQL 专属子句
+     */
+    public function driverName(): string;
+
+    /**
      * 执行写语句（INSERT/UPDATE/DELETE/DDL）
      *
      * @param string $sql    SQL 语句，占位符用 ?

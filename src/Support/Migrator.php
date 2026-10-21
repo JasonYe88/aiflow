@@ -33,12 +33,12 @@ final class Migrator
      */
     public function migrate(): array
     {
-        $this->storage->execute(
+        $this->storage->execute($this->ddl(
             'CREATE TABLE IF NOT EXISTS ai_migration (
                 version VARCHAR(64) NOT NULL PRIMARY KEY,
                 applied_at DATETIME NOT NULL
             )'
-        );
+        ));
 
         $done = array_column(
             $this->storage->query('SELECT version FROM ai_migration'),
@@ -75,7 +75,7 @@ final class Migrator
         $total = count($statements);
         foreach ($statements as $index => $sql) {
             try {
-                $this->storage->execute($sql);
+                $this->storage->execute($this->ddl($sql));
             } catch (\Throwable $e) {
                 throw new \RuntimeException(sprintf(
                     '迁移 %s 第 %d/%d 条语句执行失败（%s: %s），语句前 80 字符：%s；'
@@ -93,6 +93,29 @@ final class Migrator
             'INSERT INTO ai_migration (version, applied_at) VALUES (?, ?)',
             [$version, date('Y-m-d H:i:s')]
         );
+    }
+
+    /**
+     * MySQL 方言增强：CREATE TABLE 语句追加 ENGINE=InnoDB
+     *
+     * 为什么：宿主 MySQL 可能默认 MyISAM（无事务，如 phpstudy 的 5.7 配置），
+     * 而内核的钱包两阶段记账、契约事务用例都强依赖事务；
+     * SQLite 不认识 ENGINE 子句，故非 MySQL 驱动原样返回
+     *
+     * @param string $sql 单条语句（statements() 已去掉结尾分号）
+     */
+    private function ddl(string $sql): string
+    {
+        if (strpos($this->storage->driverName(), 'mysql') !== 0) {
+            return $sql;
+        }
+        if (stripos(ltrim($sql), 'CREATE TABLE') !== 0) {
+            return $sql; // 仅处理建表语句
+        }
+        if (stripos($sql, 'ENGINE=') !== false) {
+            return $sql; // 已显式指定引擎，尊重之
+        }
+        return $sql . ' ENGINE=InnoDB';
     }
 
     /** @return string[] 按文件名排序的 SQL 文件绝对路径 */

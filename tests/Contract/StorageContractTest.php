@@ -21,9 +21,22 @@ abstract class StorageContractTest extends TestCase
     protected function setUp(): void
     {
         $this->storage = $this->makeStorage();
-        $this->storage->execute(
-            'CREATE TABLE contract_t (id VARCHAR(32) PRIMARY KEY, num INT NOT NULL, val TEXT)'
-        );
+        $this->createTestTable();
+    }
+
+    /**
+     * 建契约测试表
+     * 默认 ANSI 可移植写法；MySQL 驱动自动追加 ENGINE=InnoDB
+     * （宿主 MySQL 可能默认 MyISAM——无事务，事务契约用例会失败）；
+     * 其它方言实现可覆写本方法定制 DDL
+     */
+    protected function createTestTable(): void
+    {
+        $sql = 'CREATE TABLE contract_t (id VARCHAR(32) PRIMARY KEY, num INT NOT NULL, val TEXT)';
+        if (strpos($this->storage->driverName(), 'mysql') === 0) {
+            $sql .= ' ENGINE=InnoDB';
+        }
+        $this->storage->execute($sql);
     }
 
     public function testExecuteAndQuery(): void

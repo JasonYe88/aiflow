@@ -20,6 +20,11 @@ final class PdoStorage implements StorageInterface
         $this->pdo = $pdo;
     }
 
+    public function driverName(): string
+    {
+        return (string)$this->pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
+    }
+
     public function execute(string $sql, array $params = []): int
     {
         $stmt = $this->pdo->prepare($sql);
