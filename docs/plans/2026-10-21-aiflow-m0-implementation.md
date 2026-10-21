@@ -47,7 +47,7 @@ git init
 
 ```json
 {
-    "name": "yafex/aiflow",
+    "name": "jasonye88/aiflow",
     "description": "可嵌入 PHP 项目的 LLMOps 内核：权限、积分、对话、Agent、工作流",
     "type": "library",
     "license": "Apache-2.0",
@@ -1418,7 +1418,7 @@ jobs:
 ## 快速开始（M0）
 
 ```bash
-composer require yafex/aiflow
+composer require jasonye88/aiflow
 ```
 
 ```php

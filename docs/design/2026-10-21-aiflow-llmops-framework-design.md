@@ -183,7 +183,7 @@ aiflow/                        ← 开源项目
 
 ## 9. 开源策略
 
-- **命名**：`aiflow`（占位名）；Packagist 命名空间如 `yafex/aiflow`
+- **命名**：`aiflow`（占位名）；Packagist 命名空间如 `jasonye88/aiflow`
 - **协议**：Apache 2.0
 - **README 即门面**：三段式——10 秒装包示例（`composer require` + 15 行代码跑通第一个 Agent）→ 架构图 → 能力矩阵
 - **差异化定位（对外叙事）**：Dify/One-API 都是"独立平台"，需要用户迁就其部署；`aiflow` 是"嵌进现有 PHP 项目的 LLMOps 内核"——存量项目不改架构即可上 AI 能力，属社区空白

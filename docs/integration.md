@@ -12,7 +12,7 @@
 ### 方式 A：Packagist 直装（M5 发布后，推荐）
 
 ```bash
-composer require yafex/aiflow
+composer require jasonye88/aiflow
 ```
 
 ### 方式 B：VCS 仓库（✅ 已实测：GitHub 仓库已上线）
@@ -24,7 +24,7 @@ composer require yafex/aiflow
     "repositories": [
         { "type": "vcs", "url": "https://github.com/JasonYe88/aiflow.git" }
     ],
-    "require": { "yafex/aiflow": "dev-master" }
+    "require": { "jasonye88/aiflow": "dev-master" }
 }
 ```
 
@@ -41,13 +41,13 @@ composer install
     "repositories": [
         { "type": "path", "url": "../aiflow" }
     ],
-    "require": { "yafex/aiflow": "dev-master" }
+    "require": { "jasonye88/aiflow": "dev-master" }
 }
 ```
 
 ```bash
 composer install
-# Installing yafex/aiflow (dev-master): Junctioning from ../aiflow
+# Installing jasonye88/aiflow (dev-master): Junctioning from ../aiflow
 ```
 
 ### 方式 D：SPL 引导（无 Composer 环境的老宿主）
@@ -148,7 +148,7 @@ $res = $kernel->gateway()->chat('qwen', [['role' => 'user', 'content' => '你好
 ## 6. 验收记录（2026-10-21）
 
 - `composer validate`：通过。
-- 全新宿主项目（空目录 + `composer.json` 声明 path 仓库）`composer install`：成功安装 `yafex/aiflow dev-master`（junction 挂载 autoload）。
+- 全新宿主项目（空目录 + `composer.json` 声明 path 仓库）`composer install`：成功安装 `jasonye88/aiflow dev-master`（junction 挂载 autoload）。
 - 宿主侧 15 行脚本实跑：boot + 自动迁移（10 张表）+ 会话落库 + 计价（qwen-plus 1M+1M = 2800 分）全部通过。
 - 结论：**「下载引用到项目即可使用」当前已成立**（path/VCS 方式）；Packagist 直装待 M5 发布。
 

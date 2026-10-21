@@ -26,17 +26,17 @@ composer test        # 全量 PHPUnit（含 MySQL 契约轮，未配置 AIFLOW_T
 
 ```bash
 # 方式 A：Packagist 直装（M5 发布后，届时推荐）
-composer require yafex/aiflow
+composer require jasonye88/aiflow
 
 # 方式 B：VCS 仓库（✅ 现在即可用——本仓库已上线 GitHub）
 # 宿主 composer.json:
 #   { "repositories": [{"type": "vcs", "url": "https://github.com/JasonYe88/aiflow.git"}],
-#     "require": {"yafex/aiflow": "dev-master"} }
+#     "require": {"jasonye88/aiflow": "dev-master"} }
 composer install
 
 # 方式 C：path 仓库（同机本地联调）
 #   { "repositories": [{"type": "path", "url": "../aiflow"}],
-#     "require": {"yafex/aiflow": "dev-master"} }
+#     "require": {"jasonye88/aiflow": "dev-master"} }
 
 # 方式 D：SPL 引导（无 Composer 的老项目；fms 现行方式）
 # 参照 docs/integration.md 方式 D 的 fms/include/aiflowBootstrap.php 实例

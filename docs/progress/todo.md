@@ -70,7 +70,7 @@
 
 ## M5：开源发布 ⬜ 下一步
 
-README（10 秒装包示例）+ examples + 文档站 + Python RAG 桥；Packagist 发布 `yafex/aiflow`（Apache 2.0）。
+README（10 秒装包示例）+ examples + 文档站 + Python RAG 桥；Packagist 发布 `jasonye88/aiflow`（Apache 2.0）。
 
 ---
 
