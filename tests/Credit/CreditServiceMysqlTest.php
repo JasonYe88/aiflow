@@ -92,17 +92,11 @@ class CreditServiceMysqlTest extends CreditServiceTest
         $this->assertSame(1000, $info['balance']);
     }
 
-    /** @param \PDO $pdo */
+    /** 动态清全部 ai_*（含 004 编目 / 005 图 / 006 知识库），避免白名单漏表导致半截迁移 */
     private function dropAiTables(): void
     {
-        $tables = [
-            'ai_ledger_entry', 'ai_price_rule', 'ai_wallet',
-            'ai_role_resource', 'ai_resource', 'ai_role',
-            'ai_conversation', 'ai_message',
-            'ai_workflow_run', 'ai_workflow_run_log', 'ai_workflow_queue', 'ai_migration',
-        ];
-        foreach ($tables as $table) {
-            $this->pdo->exec("DROP TABLE IF EXISTS {$table}");
+        foreach ($this->pdo->query("SHOW TABLES LIKE 'ai\\_%'")->fetchAll(\PDO::FETCH_NUM) as $row) {
+            $this->pdo->exec('DROP TABLE IF EXISTS `' . $row[0] . '`');
         }
     }
 }

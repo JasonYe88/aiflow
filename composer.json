@@ -1,9 +1,31 @@
 {
     "name": "jasonye88/aiflow",
-    "description": "可嵌入 PHP 项目的 LLMOps 内核：权限、积分、对话、Agent、工作流",
+    "description": "可嵌入 PHP 项目的 LLMOps 内核：权限、积分、对话、Agent、工作流、知识库",
     "type": "library",
     "license": "Apache-2.0",
-    "keywords": ["llm", "llmops", "agent", "workflow", "dify", "chatbot", "credits"],
+    "keywords": [
+        "llm",
+        "llmops",
+        "agent",
+        "workflow",
+        "rag",
+        "knowledge",
+        "dify",
+        "chatbot",
+        "credits",
+        "php"
+    ],
+    "homepage": "https://github.com/JasonYe88/aiflow",
+    "support": {
+        "issues": "https://github.com/JasonYe88/aiflow/issues",
+        "source": "https://github.com/JasonYe88/aiflow"
+    },
+    "authors": [
+        {
+            "name": "JasonYe88",
+            "homepage": "https://github.com/JasonYe88"
+        }
+    ],
     "require": {
         "php": ">=7.3",
         "ext-curl": "*",
@@ -13,13 +35,28 @@
     "require-dev": {
         "phpunit/phpunit": "^9.6"
     },
+    "suggest": {
+        "ext-redis": "生产多进程/Swoole 共享缓存时使用 RedisCache",
+        "ext-mbstring": "知识库中文分词与关键词检索需要"
+    },
     "autoload": {
-        "psr-4": { "AIFlow\\": "src/" }
+        "psr-4": {
+            "AIFlow\\": "src/"
+        }
     },
     "autoload-dev": {
-        "psr-4": { "AIFlow\\Tests\\": "tests/" }
+        "psr-4": {
+            "AIFlow\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "branch-alias": {
+            "dev-master": "0.1.x-dev"
+        }
     },
     "scripts": {
         "test": "phpunit --colors=always"
-    }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
 }

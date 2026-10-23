@@ -17,8 +17,18 @@ use AIFlow\Contract\UserProviderInterface;
 use AIFlow\Credit\CreditService;
 use AIFlow\Gateway\ModelGateway;
 use AIFlow\Gateway\OpenAiCompatibleProvider;
+use AIFlow\Contract\HttpClientInterface;
+use AIFlow\Knowledge\EmbeddingIndexer;
+use AIFlow\Knowledge\EmbeddingRetriever;
+use AIFlow\Knowledge\HttpRagClient;
+use AIFlow\Knowledge\HttpRagRetriever;
+use AIFlow\Knowledge\HybridRetriever;
+use AIFlow\Knowledge\KnowledgeService;
+use AIFlow\Knowledge\RetrieverInterface;
+use AIFlow\Knowledge\SimpleKeywordRetriever;
 use AIFlow\Support\Config;
 use AIFlow\Support\Migrator;
+use AIFlow\Workflow\GraphWorkflow;
 use AIFlow\Workflow\WorkflowEngine;
 use PDO;
 use Redis;
@@ -33,6 +43,8 @@ use Redis;
  *   migration: { dir?, auto?: bool }         dir 缺省为包内 migrations/
  *   models:    { 渠道名: { driver: openai, base_url, api_key, model }, http_timeout?: int }
  *   access:    { user_provider?: UserProviderInterface, roles_map?: {userId: [role]}, default_roles?: [role] }（M2）
+ *   knowledge: { retriever?: simple|http|embedding|hybrid, rag_url?, rag_token?, embed_channel?,
+ *                embed_batch?, embed_min_score?, hybrid_keyword_weight?, hybrid_embed_weight? }
  */
 final class AIKernel
 {
@@ -62,6 +74,12 @@ final class AIKernel
 
     /** @var WorkflowEngine|null 惰性 */
     private $workflow;
+
+    /** @var GraphWorkflow|null 惰性 */
+    private $graph;
+
+    /** @var KnowledgeService|null 惰性 */
+    private $knowledge;
 
     private function __construct(Config $config)
     {
@@ -147,6 +165,41 @@ final class AIKernel
         return $this->workflow;
     }
 
+    /** 图工作流（惰性单例）：草稿、发布、按连线运行。节点明细用 register() 后补 */
+    public function graph(): GraphWorkflow
+    {
+        if ($this->graph === null) {
+            $this->graph = new GraphWorkflow($this->storage);
+        }
+        return $this->graph;
+    }
+
+    /** 知识库架子（惰性单例）：建库/入库分段/绑定/检索；retriever=http|embedding 见配置 */
+    public function knowledge(): KnowledgeService
+    {
+        if ($this->knowledge === null) {
+            $this->knowledge = new KnowledgeService($this->storage, $this->makeRetriever());
+        }
+        return $this->knowledge;
+    }
+
+    /**
+     * 向量索引器（按需新建，非单例）：依赖 knowledge.embed_channel 对应的 embeddings 渠道
+     */
+    public function embeddingIndexer(): EmbeddingIndexer
+    {
+        $channel = (string)$this->config->get('knowledge.embed_channel', '');
+        if ($channel === '') {
+            throw new \InvalidArgumentException('请配置 knowledge.embed_channel（embeddings 渠道名）');
+        }
+        return new EmbeddingIndexer(
+            $this->storage,
+            $this->gateway(),
+            $channel,
+            (int)$this->config->get('knowledge.embed_batch', 16)
+        );
+    }
+
     /** 执行迁移，返回应用的迁移版本 */
     public function migrate(): array
     {
@@ -221,6 +274,56 @@ final class AIKernel
         return new FixedUserProvider(
             (array)$this->config->get('access.roles_map', []),
             (array)$this->config->get('access.default_roles', ['user'])
+        );
+    }
+
+    private function makeRetriever(): RetrieverInterface
+    {
+        $custom = $this->config->get('knowledge.retriever_instance');
+        if ($custom instanceof RetrieverInterface) {
+            return $custom;
+        }
+        $driver = (string)$this->config->get('knowledge.retriever', 'simple');
+        if ($driver === 'http') {
+            $http = $this->config->get('knowledge.http');
+            if (!$http instanceof HttpClientInterface) {
+                $http = new CurlHttpClient((int)$this->config->get(
+                    'knowledge.http_timeout',
+                    (int)$this->config->get('models.http_timeout', 30)
+                ));
+            }
+            $client = new HttpRagClient(
+                $http,
+                (string)$this->config->get('knowledge.rag_url', 'http://127.0.0.1:8765'),
+                (string)$this->config->get('knowledge.rag_token', '')
+            );
+            return new HttpRagRetriever($client);
+        }
+        if ($driver === 'embedding') {
+            return $this->makeEmbeddingRetriever();
+        }
+        if ($driver === 'hybrid') {
+            return new HybridRetriever(
+                new SimpleKeywordRetriever($this->storage),
+                $this->makeEmbeddingRetriever(),
+                (float)$this->config->get('knowledge.hybrid_keyword_weight', 0.4),
+                (float)$this->config->get('knowledge.hybrid_embed_weight', 0.6)
+            );
+        }
+        return new SimpleKeywordRetriever($this->storage);
+    }
+
+    private function makeEmbeddingRetriever(): EmbeddingRetriever
+    {
+        $channel = (string)$this->config->get('knowledge.embed_channel', '');
+        if ($channel === '') {
+            throw new \InvalidArgumentException('knowledge.retriever 为 embedding/hybrid 时须配置 knowledge.embed_channel');
+        }
+        return new EmbeddingRetriever(
+            $this->storage,
+            $this->gateway(),
+            $channel,
+            (float)$this->config->get('knowledge.embed_min_score', 0.0)
         );
     }
 }

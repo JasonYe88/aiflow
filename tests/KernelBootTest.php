@@ -158,4 +158,41 @@ class KernelBootTest extends TestCase
         $this->assertSame($agent, $kernel->agent()); // 惰性单例
         $this->assertSame([], $agent->toolNames());  // 裸内核：零工具，宿主按需注册
     }
+
+    public function testBootWiresKnowledgeService(): void
+    {
+        $kernel = AIKernel::boot([
+            'storage'   => ['dsn' => 'sqlite::memory:'],
+            'cache'     => ['driver' => 'array'],
+            'migration' => ['auto' => true],
+        ]);
+
+        $kb = $kernel->knowledge();
+        $this->assertInstanceOf(\AIFlow\Knowledge\KnowledgeService::class, $kb);
+        $this->assertSame($kb, $kernel->knowledge());
+        $baseId = $kb->createBase('boot.kb', 'Kernel接线', 'u1');
+        $this->assertNotSame('', $baseId);
+        $this->assertInstanceOf(
+            \AIFlow\Knowledge\SimpleKeywordRetriever::class,
+            $kb->retriever()
+        );
+    }
+
+    public function testBootWiresHttpRagRetrieverWhenConfigured(): void
+    {
+        $fake = new \AIFlow\Tests\Support\FakeHttpClient();
+        $kernel = AIKernel::boot([
+            'storage' => ['dsn' => 'sqlite::memory:'],
+            'cache'   => ['driver' => 'array'],
+            'knowledge' => [
+                'retriever' => 'http',
+                'rag_url'   => 'http://rag.test',
+                'http'      => $fake,
+            ],
+        ]);
+        $this->assertInstanceOf(
+            \AIFlow\Knowledge\HttpRagRetriever::class,
+            $kernel->knowledge()->retriever()
+        );
+    }
 }

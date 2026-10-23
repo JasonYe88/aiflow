@@ -1,7 +1,7 @@
 # AIFlow —— 可嵌入 PHP LLMOps 内核 · 设计文档
 
 > 日期：2026-10-21
-> 状态：设计已确认；M0–M4 内核已实施（2026-10-21）。M4 的 FMS 财务流程挂载、M5 开源发布未完成
+> 状态：设计已确认；M0–M5 代码侧已实施（2026-10-22）。M4 的 FMS 财务流程挂载仍待宿主消费；Packagist 收录需所有者推送 tag
 > 对标：Dify（https://github.com/langgenius/dify）——差异化定位见下文
 
 ---
@@ -202,7 +202,7 @@ aiflow/                        ← 开源项目
 | **M2** | CreditLedger 两阶段记账 + AccessControl RBAC | 对话自动计费、按角色限流可用 | ✅ 2026-10-21：Billing 预检/清算 + RBAC；独立 demo 与 fms 薄挂载实测扣费、402、403 |
 | **M3** | AgentRuntime + 工具注册 | 一个 Agent 用工具完成真实查询任务 | ✅ 引擎与单测；真实模型工具调用待宿主场景 |
 | **M4** | WorkflowEngine + 4 种内置节点 + 运行追踪 | **FMS 一条成熟财务流程以工作流挂载跑通（核心验收）** | ⚠️ 引擎完成；FMS 财务流程挂载未做 |
-| **M5** | 开源发布：README/示例/文档站 + Python RAG 桥 | Packagist 发布 + 新用户 15 分钟跑通示例 | ⬜ |
+| **M5** | 开源发布：README/示例/文档站 + Python RAG 桥 | Packagist 就绪 + 桥可跑；收录待推 tag | ✅ 代码侧 |
 
 ---
 

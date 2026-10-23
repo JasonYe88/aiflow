@@ -59,6 +59,32 @@ class ChatServiceTest extends TestCase
         $this->assertSame($cid, $list[0]['id']);
     }
 
+    public function testDeleteConversationRemovesMessages(): void
+    {
+        $cid = $this->chat->startConversation('demo_user', 'chat_demo', '要删的');
+        $this->chat->appendMessage($cid, 'user', '你好');
+        $keep = $this->chat->startConversation('demo_user', 'chat_demo', '留下');
+
+        $this->chat->deleteConversation('demo_user', $cid);
+
+        $list = $this->chat->listConversations('demo_user');
+        $this->assertCount(1, $list);
+        $this->assertSame($keep, $list[0]['id']);
+        $this->assertSame([], $this->chat->history($cid));
+    }
+
+    public function testDeleteOtherUsersConversationRejected(): void
+    {
+        $cid = $this->chat->startConversation('demo_user', 'chat_demo', '别人的');
+        try {
+            $this->chat->deleteConversation('other_user', $cid);
+            $this->fail('不应删除别人的会话');
+        } catch (\InvalidArgumentException $e) {
+            $this->assertSame('会话不存在', $e->getMessage());
+        }
+        $this->assertCount(1, $this->chat->listConversations('demo_user'));
+    }
+
     public function testHistoryOfUnknownConversationIsEmpty(): void
     {
         $this->assertSame([], $this->chat->history('no_such_id'));

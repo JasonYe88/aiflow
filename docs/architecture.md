@@ -47,6 +47,7 @@ src/
 │   ├── CacheInterface.php           #   缓存契约
 │   ├── HttpClientInterface.php      #   HTTP 契约：request / requestStream（SSE 用）
 │   ├── ModelProviderInterface.php   #   模型提供方契约：chat / chatStream
+│   ├── EmbeddingCapableInterface.php#   可选：embed()（OpenAI /embeddings）
 │   └── UserProviderInterface.php    #   宿主用户体系适配：把宿主用户映射为框架角色（M2 消费）
 ├── Adapter/                          # 契约的内置实现
 │   ├── PdoStorage.php                #   MySQL/SQLite 通吃（PDO），事务支持
@@ -81,6 +82,17 @@ src/
 │   ├── AccessService.php             #   扁平 RBAC：ensureRole/ensureResource/grant/revoke
 │   │                                 #   + check/guard（deny 优先、`app:*`/`*:*` 通配）
 │   └── FixedUserProvider.php         #   默认用户→角色映射（roles_map 精确 + default_roles 兜底）
+├── Knowledge/                        # 知识库架子 ✅
+│   ├── KnowledgeService.php          #   建库/入库分段/绑定/检索
+│   ├── RetrieverInterface.php        #   检索契约（simple / http / embedding 可替换）
+│   ├── SimpleKeywordRetriever.php    #   默认关键词
+│   ├── HttpRagRetriever.php          #   Python RAG 桥
+│   ├── EmbeddingRetriever.php        #   余弦检索（须先 EmbeddingIndexer）
+│   ├── EmbeddingIndexer.php          #   写 embedding_json
+│   ├── HybridRetriever.php           #   关键词+向量加权合并
+│   ├── KnowledgeContext.php          #   hits → LLM 上下文文本
+│   ├── RetrieveKnowledgeTask.php     #   工作流 task：注入 knowledge_context
+│   └── KnowledgeRetrieveTool.php     #   Agent Tool
 ├── Support/                          # 横切支撑
 │   ├── Config.php                    #   点路径只读配置（get('cache.driver')）
 │   ├── Id.php                        #   32 位 hex 单调主键：时间戳前缀+随机段+毫秒内序号
@@ -115,22 +127,18 @@ tests/                                # PHPUnit 9.6，契约测试驱动
 └── KernelBootTest.php / SmokeTest.php
 ```
 
-## 数据模型（migrations/，11 张 ai_* 表）
+## 数据模型（migrations/ 001–007，21 张业务表 + ai_migration）
 
 | 表 | 域 | 用途 | 里程碑 |
 |---|---|---|---|
-| `ai_role` | 权限 | 角色定义（code 唯一） | M2 ✅ 已消费 |
-| `ai_resource` | 权限 | 资源登记（app/workflow/tool） | M2 ✅ 已消费 |
-| `ai_role_resource` | 权限 | 角色-资源授权（allow/deny，deny 优先） | M2 ✅ 已消费 |
-| `ai_wallet` | 积分 | 钱包（user/dept/app 三种 owner，余额+冻结，单位分） | M2 ✅ 已消费 |
-| `ai_price_rule` | 积分 | 模型计价（每百万 token 单价 + 倍率） | M2 ✅ 已消费 |
-| `ai_ledger_entry` | 积分 | 计量流水（grant/reserve/settle/refund，ref_id 幂等） | M2 ✅ 已消费 |
-| `ai_conversation` | 对话 | 会话（updated_seq 单调活跃序列） | M1 ✅ 已消费 |
-| `ai_message` | 对话 | 消息（role/content/tokens/耗时） | M1 ✅ 已消费 |
-| `ai_workflow_run` | 工作流 | 运行实例（状态+上下文 JSON，ref_id 业务锚点） | M4 ✅ 已消费 |
-| `ai_workflow_run_log` | 工作流 | 节点级执行日志（input/output 快照 + skipped 日记） | M4 ✅ 已消费 |
-| `ai_workflow_queue` | 工作流 | 异步队列（queued→running→done/failed，原子抢占） | M4 ✅ 已消费 |
-| `ai_migration` | 框架 | 迁移版本记录（Migrator 自建） | M0 ✅ |
+| `ai_role` / `ai_resource` / `ai_role_resource` | 权限 | RBAC | M2 ✅ |
+| `ai_wallet` / `ai_price_rule` / `ai_ledger_entry` | 积分 | 钱包与流水 | M2 ✅ |
+| `ai_conversation` / `ai_message` | 对话 | 会话消息 | M1 ✅ |
+| `ai_workflow_run` / `ai_workflow_run_log` / `ai_workflow_queue` | 工作流 | 运行与异步队列 | M4 ✅ |
+| `ai_skill` / `ai_tool` / `ai_entry` / `ai_user_rule` / `ai_workflow_def` | 编目 | 技能/工具/入口登记 | 004 ✅ |
+| `ai_workflow_graph` | 图工作流 | 草稿/已发布 JSON | 005 ✅ |
+| `ai_knowledge_base` / `document` / `chunk` / `binding` | 知识库 | 库/文档/分段/绑定；chunk 含 `embedding_json` | 006–007 ✅ |
+| `ai_migration` | 框架 | 迁移版本 | M0 ✅ |
 
 约定：主键为 `Id::gen()` 32 位 hex 字符串（无 AUTO_INCREMENT，保证 SQL 在 MySQL/SQLite 间可移植）；金额单位为分；token 数量为 BIGINT。
 
@@ -161,4 +169,4 @@ $kernel = AIKernel::boot([
 ]);
 ```
 
-服务访问器：`$kernel->storage()` / `cache()` / `gateway()` / `chat()` / `credit()` / `guard()` / `agent()` / `migrate()` / `config()`。
+服务访问器：`$kernel->storage()` / `cache()` / `gateway()` / `chat()` / `credit()` / `guard()` / `agent()` / `workflow()` / `graph()` / `knowledge()` / `embeddingIndexer()` / `migrate()` / `config()`。

@@ -46,6 +46,27 @@ final class ChatService
         );
     }
 
+    /**
+     * 删除当前用户的一场会话及其消息
+     * 会话不属于该用户时拒绝，不改任何行
+     *
+     * @throws \InvalidArgumentException 会话不存在或不属于该用户
+     */
+    public function deleteConversation(string $userId, string $conversationId): void
+    {
+        $rows = $this->storage->query(
+            'SELECT id FROM ai_conversation WHERE id = ? AND user_id = ?',
+            [$conversationId, $userId]
+        );
+        if (!isset($rows[0])) {
+            throw new \InvalidArgumentException('会话不存在');
+        }
+        $this->storage->transaction(function () use ($conversationId) {
+            $this->storage->execute('DELETE FROM ai_message WHERE conversation_id = ?', [$conversationId]);
+            $this->storage->execute('DELETE FROM ai_conversation WHERE id = ?', [$conversationId]);
+        });
+    }
+
     /** 会话消息（时间正序），未知会话返回空数组；id 为时间戳前缀 hex，同秒内天然有序，双端排序一致 */
     public function history(string $conversationId, int $limit = 200): array
     {

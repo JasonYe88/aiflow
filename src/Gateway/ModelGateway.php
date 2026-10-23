@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace AIFlow\Gateway;
 
+use AIFlow\Contract\EmbeddingCapableInterface;
 use AIFlow\Contract\ModelProviderInterface;
 use AIFlow\Support\ModelResult;
 
@@ -39,6 +40,21 @@ final class ModelGateway
     public function chatStream(string $channel, array $messages, array $options, callable $onDelta): ModelResult
     {
         return $this->provider($channel)->chatStream($messages, $options, $onDelta);
+    }
+
+    /**
+     * OpenAI 兼容向量：渠道须实现 EmbeddingCapableInterface
+     *
+     * @param string[] $texts
+     * @return float[][]
+     */
+    public function embed(string $channel, array $texts, array $options = []): array
+    {
+        $provider = $this->provider($channel);
+        if (!$provider instanceof EmbeddingCapableInterface) {
+            throw new \InvalidArgumentException("渠道 {$channel} 不支持 embeddings");
+        }
+        return $provider->embed($texts, $options);
     }
 
     private function provider(string $channel): ModelProviderInterface

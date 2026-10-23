@@ -74,9 +74,52 @@
 - 全量：173 用例 / 1642 断言全绿（3 skip 为 live HTTP/Redis；MySQL 契约轮实库通过；PHP 7.3.4 真机同套全绿）
 - 待办：FMS 一条成熟财务流程以工作流挂载（原 M4 核心验收，待 FMS 侧消费）；真实模型验证待 `AIFLOW_QWEN_KEY` 场景实跑 examples/workflow.php
 
-## M5：开源发布 ⬜ 下一步
+## M5：开源发布 ✅ 代码侧完成（2026-10-22）
 
-README（10 秒装包示例）+ examples + 文档站 + Python RAG 桥；Packagist 发布 `jasonye88/aiflow`（Apache 2.0）。
+计划：[../plans/2026-10-22-aiflow-m5-release.md](../plans/2026-10-22-aiflow-m5-release.md) · 发版单：[../release.md](../release.md)
+
+- README 10 秒装包 + CHANGELOG + `.gitattributes` + composer 元数据 ✅
+- `plugins/python-rag`（stdlib HTTP + TF-IDF）+ protocol ✅
+- PHP `HttpRagClient` / `HttpRagRetriever` + Kernel `knowledge.retriever=http` ✅
+- `examples/rag.php` + HttpRag 单测 + CI 冒烟 ✅
+- **你方**：推送 `v0.1.0` → packagist.org Submit（本仓库不代提交）
+
+## Embedding 检索 ✅（接 M5，2026-10-22）
+
+- `EmbeddingCapableInterface` + `OpenAiCompatibleProvider::embed` + `ModelGateway::embed`
+- 迁移 `007_knowledge_embedding.sql`（`embedding_json`）
+- `EmbeddingIndexer` / `EmbeddingRetriever` / `VectorMath` + Kernel 装配
+- `examples/embedding.php` + 单测 + CI
+
+## 工作流知识注入 ✅（I12，2026-10-22）
+
+- `KnowledgeContext`（hits → 文本 / system message）
+- `RetrieveKnowledgeTask`（须 `useKnowledge($kernel->knowledge())`）
+- `examples/knowledge_workflow.php` + `KnowledgeWorkflowTest`
+
+## 文件入库 + Hybrid 检索 ✅（2026-10-22）
+
+- `updateBase` / `ingestFile`（本地纯文本，无上传 UI）
+- `HybridRetriever` + `knowledge.retriever=hybrid`
+
+## FMS/Demo 对话页接知识库 ✅（2026-10-22）
+
+- `ChatDemoPage`：`knowledge_enabled` 默认开；retrieve → `KnowledgeContext` 注入 system
+- SSE meta 含 `knowledge_hits`；CatalogConsole 下 `knowledge_seed=false`（灌库在知识库页）
+
+## CatalogConsole 知识库运营面 P0（L1–L4）✅（2026-10-22）
+
+- 列表卡片（文档数 / 词量 / 关联入口）+ 空库
+- 单库：文档（启用/禁用、文本/文件入库、分段预览）· 召回测试 · 设置（名/描述/绑定）
+- 调研依据：[../knowledge/gaia-dify-research.md](../knowledge/gaia-dify-research.md)
+
+## 知识库（跨 M）
+
+**架子 + Demo 运营面 P0 已落地；不做具体业务内容 / 不做 Gaia 止血。**
+
+- 架子 Todo：[../knowledge/skeleton-todo.md](../knowledge/skeleton-todo.md)（K ✅ · L0–L4 ✅）
+- 组织制度（参考）：[../knowledge/ops-policy.md](../knowledge/ops-policy.md)
+- Gaia 止血建单（搁置）：[../knowledge/jira-tickets-gaia-hotfix.md](../knowledge/jira-tickets-gaia-hotfix.md)
 
 ---
 

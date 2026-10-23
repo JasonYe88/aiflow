@@ -41,6 +41,10 @@ class MigratorTest extends TestCase
         $this->assertContains('001_init.sql', $applied);
         $this->assertContains('002_conversation_activity_seq.sql', $applied);
         $this->assertContains('003_workflow_queue.sql', $applied);
+        $this->assertContains('004_catalog.sql', $applied);
+        $this->assertContains('005_workflow_graph.sql', $applied);
+        $this->assertContains('006_knowledge.sql', $applied);
+        $this->assertContains('007_knowledge_embedding.sql', $applied);
 
         // 幂等：再跑一遍不重复执行
         $this->assertSame([], $migrator->migrate());
@@ -49,17 +53,22 @@ class MigratorTest extends TestCase
         $versions = $this->storage->query('SELECT version FROM ai_migration');
         $this->assertNotEmpty($versions);
 
-        // 11 张业务表全部存在（11 张 + 版本表）
+        // 21 张业务表 + ai_migration（001–007 终态；007 仅加列）
         $tables = array_column(
             $this->storage->query(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'ai_%'"
             ),
             'name'
         );
-        $this->assertCount(12, $tables);
-        foreach (['ai_role', 'ai_resource', 'ai_role_resource', 'ai_wallet', 'ai_price_rule',
-                  'ai_ledger_entry', 'ai_conversation', 'ai_message',
-                  'ai_workflow_run', 'ai_workflow_run_log', 'ai_workflow_queue'] as $table) {
+        $this->assertCount(22, $tables);
+        foreach ([
+            'ai_role', 'ai_resource', 'ai_role_resource', 'ai_wallet', 'ai_price_rule',
+            'ai_ledger_entry', 'ai_conversation', 'ai_message',
+            'ai_workflow_run', 'ai_workflow_run_log', 'ai_workflow_queue',
+            'ai_skill', 'ai_tool', 'ai_entry', 'ai_user_rule', 'ai_workflow_def',
+            'ai_workflow_graph',
+            'ai_knowledge_base', 'ai_knowledge_document', 'ai_knowledge_chunk', 'ai_knowledge_binding',
+        ] as $table) {
             $this->assertContains($table, $tables);
         }
     }
@@ -90,11 +99,15 @@ class MigratorTest extends TestCase
 
         $migrator = new Migrator($this->storage, $this->migrationsDir);
 
-        // 首跑：001 建 10 张表 + 002 加活跃序列列 + 003 工作流队列，全部在 MySQL 上执行成功
+        // 首跑：001–006 全部在 MySQL 上执行成功
         $applied = $migrator->migrate();
         $this->assertContains('001_init.sql', $applied);
         $this->assertContains('002_conversation_activity_seq.sql', $applied);
         $this->assertContains('003_workflow_queue.sql', $applied);
+        $this->assertContains('004_catalog.sql', $applied);
+        $this->assertContains('005_workflow_graph.sql', $applied);
+        $this->assertContains('006_knowledge.sql', $applied);
+        $this->assertContains('007_knowledge_embedding.sql', $applied);
 
         // 幂等：重跑跳过已应用版本，不报 table already exists / duplicate column
         $this->assertSame([], $migrator->migrate());
@@ -106,6 +119,10 @@ class MigratorTest extends TestCase
                 ['version' => '001_init.sql'],
                 ['version' => '002_conversation_activity_seq.sql'],
                 ['version' => '003_workflow_queue.sql'],
+                ['version' => '004_catalog.sql'],
+                ['version' => '005_workflow_graph.sql'],
+                ['version' => '006_knowledge.sql'],
+                ['version' => '007_knowledge_embedding.sql'],
             ],
             $versions
         );

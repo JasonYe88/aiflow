@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace AIFlow\Gateway;
 
+use AIFlow\Contract\EmbeddingCapableInterface;
 use AIFlow\Contract\HttpClientInterface;
 use AIFlow\Contract\ModelProviderInterface;
 use AIFlow\Exception\ModelCallException;
@@ -13,7 +14,7 @@ use AIFlow\Support\ModelResult;
  * OpenAI 兼容协议提供方：DeepSeek / 通义 / Kimi 等 99% 国产与开源模型一个类通吃
  * 通过 tests/Gateway/OpenAiCompatibleProviderTest.php（FakeHttpClient）验证
  */
-final class OpenAiCompatibleProvider implements ModelProviderInterface
+final class OpenAiCompatibleProvider implements ModelProviderInterface, EmbeddingCapableInterface
 {
     /** @var string */
     private $baseUrl;
@@ -52,6 +53,59 @@ final class OpenAiCompatibleProvider implements ModelProviderInterface
             (int)max(1, round((microtime(true) - $start) * 1000)),
             $data
         );
+    }
+
+    public function embed(array $texts, array $options = []): array
+    {
+        if ($texts === []) {
+            return [];
+        }
+        $input = array_values($texts);
+        // 单条时多数兼容渠道接受 string；多条用数组
+        $payload = [
+            'model' => (string)($options['model'] ?? $this->model),
+            'input' => count($input) === 1 ? $input[0] : $input,
+        ];
+        foreach (['dimensions', 'encoding_format'] as $key) {
+            if (isset($options[$key])) {
+                $payload[$key] = $options[$key];
+            }
+        }
+        $resp = $this->http->request(
+            'POST',
+            $this->baseUrl . '/embeddings',
+            $this->headers(),
+            (string)json_encode($payload, JSON_UNESCAPED_UNICODE)
+        );
+        $this->assertOk($resp);
+        $data = $this->decode($resp->body);
+        $rows = $data['data'] ?? null;
+        if (!is_array($rows)) {
+            throw new ModelCallException('embeddings 响应缺少 data', $resp->statusCode, $resp->body);
+        }
+        usort($rows, function ($a, $b) {
+            return ((int)($a['index'] ?? 0)) <=> ((int)($b['index'] ?? 0));
+        });
+        $vectors = [];
+        foreach ($rows as $row) {
+            $emb = $row['embedding'] ?? null;
+            if (!is_array($emb)) {
+                throw new ModelCallException('embeddings 条目缺少 embedding', $resp->statusCode, $resp->body);
+            }
+            $vec = [];
+            foreach ($emb as $v) {
+                $vec[] = (float)$v;
+            }
+            $vectors[] = $vec;
+        }
+        if (count($vectors) !== count($input)) {
+            throw new ModelCallException(
+                'embeddings 条数与输入不一致：' . count($vectors) . '/' . count($input),
+                $resp->statusCode,
+                $resp->body
+            );
+        }
+        return $vectors;
     }
 
     public function chatStream(array $messages, array $options, callable $onDelta): ModelResult

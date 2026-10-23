@@ -49,6 +49,14 @@ jobs:
         run: php examples/agent.php
       - name: Run workflow smoke example
         run: php examples/workflow.php
+      - name: Run knowledge smoke example
+        run: php examples/knowledge.php
+      - name: Run rag smoke example
+        run: php examples/rag.php
+      - name: Run embedding smoke example
+        run: php examples/embedding.php
+      - name: Run knowledge workflow smoke example
+        run: php examples/knowledge_workflow.php
       - name: Run tests
         run: composer test
         env:

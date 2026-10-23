@@ -167,4 +167,17 @@ class OpenAiCompatibleProviderTest extends TestCase
         $this->expectException(ModelCallException::class);
         $this->provider()->chatStream([['role' => 'user', 'content' => 'hi']], [], function (): void {});
     }
+
+    public function testEmbedParsesVectorsInIndexOrder(): void
+    {
+        $this->http->queue(new HttpResponse(200, json_encode([
+            'data' => [
+                ['index' => 1, 'embedding' => [0.0, 1.0]],
+                ['index' => 0, 'embedding' => [1.0, 0.0]],
+            ],
+        ])));
+        $vectors = $this->provider()->embed(['a', 'b']);
+        $this->assertSame([[1.0, 0.0], [0.0, 1.0]], $vectors);
+        $this->assertStringContainsString('/embeddings', $this->http->requests[0]['url']);
+    }
 }
