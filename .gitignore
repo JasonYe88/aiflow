@@ -5,3 +5,5 @@
 .vscode/
 *.log
 demo/*.sqlite
+demo/*.sqlite-journal
+.cursor/
